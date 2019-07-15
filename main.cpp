@@ -3,10 +3,16 @@
 #include <vector>
 #include "polystring.h"
 #include "sos.h"
+#include "tests.h"
 
 using namespace std;
 
 int main(int argc, char * argv[]) {
+
+    if (argc == 2 && strcmp(argv[1], "--test") == 0) {
+        run_tests();
+        return 0;
+    }
 
     int d = 0;
     string positivity_condition = "PSD";

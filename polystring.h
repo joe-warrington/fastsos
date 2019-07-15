@@ -15,7 +15,9 @@ struct PolyInfo{
     int n_terms = 0;
 };
 
-PolyInfo infer_dim_and_n_terms(const std::string& s);
+PolyInfo infer_dim_and_n_terms(const std::string& s, bool diag_msg);
+
+void print_polynomial_table(vector<double>& mono_coeffs, vector<vector<int> >& mono_exponents);
 
 void parse_poly(string& s, vector<double>& mono_coeffs_in, vector<vector<int> >& mono_exponents_in,
-                PolyInfo& info);
+                PolyInfo& info, bool diag_msg);

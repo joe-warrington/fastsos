@@ -325,57 +325,57 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
     int degree_to_add;
     bool check_this_k1;
 
-    cout << "Eliminating unused monomials by looking for zero entries on the matrix diagonal... " << endl;
-    vector<vector<int> > reduced_d_exponents = all_d_exponents;
-    bool keep_this_monomial, present_in_this_term;
-    unsigned long int filtered_s_of_d = s_of_d;
-    for (unsigned long int i = s_of_d - 1; i >= 0; i--) {
-        keep_this_monomial = false;
-        // Iterate over terms in f
-        for (int t = 0; t < f_mono_coeffs.size(); t++) {
-            present_in_this_term = true;
-            for (int dim = 0; dim < n; d++) {
-                if (2 * all_d_exponents[i][dim] != f_mono_exponents[t][dim]) {
-                    present_in_this_term = false;
-                    break;
-                }
-            }
-            if (present_in_this_term) {
-                keep_this_monomial = true;
-                break;
-            }
-
-        }
-        if (keep_this_monomial) {
-            continue;
-        }
-        for (int j = 0; j < g_mono_coeffs.size(); j++) {  // for all constraint functions g_j(x)
-            for (int t = 0; t < g_mono_coeffs[j].size(); t++) {  // for all terms t in g_j(x)
-                present_in_this_term = true;
-                for (int k = 0; k < s_of_d_minus_djs[j]; k++) {  // for all multiplying terms in sigma_j(x)
-                    for (int dim = 0; dim < n; d++) {
-                        if (2 * all_d_exponents[i][dim] != g_mono_exponents[j][t][dim] + all_d_exponents[k][dim]) {
-                            present_in_this_term = false;
-                            break;
-                        }
-                    }
-                }
-                if (present_in_this_term) {
-                    keep_this_monomial = true;
-                    break; // break out of term loop
-                }
-            }
-            if (present_in_this_term) {
-                keep_this_monomial = true;
-                break;  // break out of j loop
-            }
-        }
-        if (!keep_this_monomial) {
-            cout << "  Deleted monomial  " << monomial_to_string(all_d_exponents[i]) << endl;
-            reduced_d_exponents.erase(i);
-        }
-    }
-    filtered_s_of_d = all_d_exponents.size();
+//    cout << "Eliminating unused monomials by looking for zero entries on the matrix diagonal... " << endl;
+//    vector<vector<int> > reduced_d_exponents = all_d_exponents;
+//    bool keep_this_monomial, present_in_this_term;
+//    unsigned long int filtered_s_of_d = s_of_d;
+//    for (unsigned long int i = s_of_d - 1; i >= 0; i--) {
+//        keep_this_monomial = false;
+//        // Iterate over terms in f
+//        for (int t = 0; t < f_mono_coeffs.size(); t++) {
+//            present_in_this_term = true;
+//            for (int dim = 0; dim < n; d++) {
+//                if (2 * all_d_exponents[i][dim] != f_mono_exponents[t][dim]) {
+//                    present_in_this_term = false;
+//                    break;
+//                }
+//            }
+//            if (present_in_this_term) {
+//                keep_this_monomial = true;
+//                break;
+//            }
+//
+//        }
+//        if (keep_this_monomial) {
+//            continue;
+//        }
+//        for (int j = 0; j < g_mono_coeffs.size(); j++) {  // for all constraint functions g_j(x)
+//            for (int t = 0; t < g_mono_coeffs[j].size(); t++) {  // for all terms t in g_j(x)
+//                present_in_this_term = true;
+//                for (int k = 0; k < s_of_d_minus_djs[j]; k++) {  // for all multiplying terms in sigma_j(x)
+//                    for (int dim = 0; dim < n; d++) {
+//                        if (2 * all_d_exponents[i][dim] != g_mono_exponents[j][t][dim] + all_d_exponents[k][dim]) {
+//                            present_in_this_term = false;
+//                            break;
+//                        }
+//                    }
+//                }
+//                if (present_in_this_term) {
+//                    keep_this_monomial = true;
+//                    break; // break out of term loop
+//                }
+//            }
+//            if (present_in_this_term) {
+//                keep_this_monomial = true;
+//                break;  // break out of j loop
+//            }
+//        }
+//        if (!keep_this_monomial) {
+//            cout << "  Deleted monomial  " << monomial_to_string(all_d_exponents[i]) << endl;
+//            reduced_d_exponents.erase(i);
+//        }
+//    }
+//    filtered_s_of_d = all_d_exponents.size();
 
     cout << "Creating the " << s_of_2d << " coefficient matching constraints... ";
     cout << flush;
@@ -465,18 +465,18 @@ void sos_level_d(string& f_string, vector<string>& g_strings, int d_request, str
 
     // 1. Work out dimension and degree of each polynomial
     // Parse f(x)
-    PolyInfo f_info = infer_dim_and_n_terms(f_string);
+    PolyInfo f_info = infer_dim_and_n_terms(f_string, false);
     if (f_info.degree == 0) {cout << "Cannot minimize a constant." << endl; return;}
     vector<double> f_mono_coeffs(f_info.n_terms, 0.0); // List of monomial coefficients
     vector<vector<int> > f_mono_exponents(f_info.n_terms, vector<int>(f_info.dimension, 0));
-    parse_poly(f_string, f_mono_coeffs, f_mono_exponents, f_info);
+    parse_poly(f_string, f_mono_coeffs, f_mono_exponents, f_info, false);
 
     // Parse g_1(x), ..., g_m(x)
     vector<PolyInfo> g_infos;
     vector<vector <double> > g_mono_coeffs;
     vector<vector <vector <int> > > g_mono_exponents;
     for (int j = 0; j < m; j++) {
-        g_infos.push_back(infer_dim_and_n_terms(g_strings[j]));
+        g_infos.push_back(infer_dim_and_n_terms(g_strings[j], false));
         if (g_infos.back().n_terms == 0) {
             g_infos.pop_back();  // Delete last polynomial because it was most likely just an empty space character
             cout << "  Polynomial g(" << j + 1 << ") has no terms: [" << g_strings[j] << "]. Skipping." << endl;
@@ -486,7 +486,7 @@ void sos_level_d(string& f_string, vector<string>& g_strings, int d_request, str
         vector<vector<int> > g_mono_exponents_entry(g_infos[j].n_terms, vector<int>(g_infos[j].dimension, 0));
         g_mono_coeffs.push_back(g_mono_coeffs_entry);
         g_mono_exponents.push_back(g_mono_exponents_entry);
-        parse_poly(g_strings[j], g_mono_coeffs[j], g_mono_exponents[j], g_infos[j]);
+        parse_poly(g_strings[j], g_mono_coeffs[j], g_mono_exponents[j], g_infos[j], false);
     }
     m = g_infos.size(); // Update m to account for skipped strings containing no terms
 
