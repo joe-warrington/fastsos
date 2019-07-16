@@ -60,7 +60,6 @@ int main(int argc, char * argv[]) {
 //    string poly_string = "x_1^4 - 10x_1^3 + x_1^1";
 //    string poly_string = "x_n1^4 x_2^2 + x_1^2 x_2^4 - 3x_1^2 x_2^2 + 1";
 
-//    poly_string = "x_1^2 - x_1^1";
-    sos_level_d(poly_string, constr_strings, d, positivity_condition);
+    auto sol_info = sos_level_d(poly_string, constr_strings, d, positivity_condition, 0);
     return 0;
 }

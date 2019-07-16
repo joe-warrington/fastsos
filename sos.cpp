@@ -143,13 +143,14 @@ T sum_vec(const vector <T>& v) {
     return output;
 }
 
-vector<vector <int> > generate_all_exponents(const int n, const int d) {
+vector<vector <int> > generate_all_exponents(const int n, const int d, int output_level) {
     unsigned long int s_of_d = n_monomials(n, d);
     vector<int> blank_row(n, 0);
     auto row = blank_row;
     vector<vector <int> > vec_out(s_of_d, blank_row);
     timestamp_t t1, t2;
-    cout << "Generating all " << s_of_d << " exponents for n = " << n << " up to degree " << d << "...";
+    if (output_level > 0)
+        cout << "Generating all " << s_of_d << " exponents for n = " << n << " up to degree " << d << "...";
     t1 = timenow();
     int current_d = 1;
     vector<int> e_posns(d, 0);  // Positions of the up to d exponents
@@ -188,7 +189,8 @@ vector<vector <int> > generate_all_exponents(const int n, const int d) {
         }
     }
     t2 = timenow();
-    cout << " done in " << time_string(t2 - t1) << "." << endl;
+    if (output_level > 0)
+        cout << " done in " << time_string(t2 - t1) << "." << endl;
     return vec_out;
 }
 
@@ -305,7 +307,7 @@ int compute_d(PolyInfo f_info, vector<PolyInfo> g_infos, int d_request) {
 void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vector<int> >& f_mono_exponents,
                           vector<vector <double> >& g_mono_coeffs, vector<vector <vector <int> > >& g_mono_exponents,
                           int n, int d, unsigned long int s_of_d, Variable::t& lambda, Variable::t& sigma_0,
-                          vector<Variable::t>& sigma_j, vector<unsigned long int>& s_of_d_minus_djs) {
+                          vector<Variable::t>& sigma_j, vector<unsigned long int>& s_of_d_minus_djs, int output_level) {
     // For monomials in s(2d), find all entries (alpha, beta) for which x^(alpha+beta) = monomial.
     // For the entries of s(2d) for which there is a term in f, set RHS of constraint to the coefficient. Otherwise 0.
 
@@ -316,7 +318,7 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
 
     int n_contributors;
     double constr_rhs;
-    vector<vector <int> > all_2d_exponents = generate_all_exponents(n, 2 * d);
+    vector<vector <int> > all_2d_exponents = generate_all_exponents(n, 2 * d, output_level);
     vector<vector <int> > all_d_exponents = all_2d_exponents; // Technically wasteful as it duplicates the 2d list
     all_d_exponents.resize(s_of_d);  // Only retain the exponents up to degree d
     int new_mod = 0, old_mod = 0;
@@ -376,14 +378,15 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
 //        }
 //    }
 //    filtered_s_of_d = all_d_exponents.size();
-
-    cout << "Creating the " << s_of_2d << " coefficient matching constraints... ";
-    cout << flush;
+    if (output_level > 0) {
+        cout << "Creating the " << s_of_2d << " coefficient matching constraints... ";
+        cout << flush;
+    }
     for (unsigned long int i = 0; i < s_of_2d; i++){
         // Print progress in percent based on fraction of i indices covered.
         old_mod = new_mod;
         new_mod = (int) (100 * i) / s_of_2d;
-        if (new_mod > old_mod) {
+        if (new_mod > old_mod && output_level > 0) {
             if (new_mod > 1)
                 cout << "\b\b\b\b" << setw(2) << setfill(' ') << new_mod << "% " << flush;
             else
@@ -455,28 +458,46 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
     }
 }
 
-void sos_level_d(string& f_string, vector<string>& g_strings, int d_request, string& positivity_condition) {
+tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
+        string& f_string, vector<string>& g_strings, int d_request, string& positivity_condition, int output_level) {
+
+    double obj_val = 0.0;
+    ProblemStatus problem_status;
+    SolutionStatus solution_status_primal;
+    SolutionStatus solution_status_dual;
 
     // 0. State objective and constraints as strings read from file
-    cout << "f(x)\t= " << f_string << endl;
     int m = g_strings.size();
-    for (int i = 0; i < m; i++)
-        cout << "g_" << i + 1 << "(x)\t= " << g_strings[i] << endl;
-
+    if (output_level > 0) {
+        cout << "f(x)\t= " << f_string << endl;
+        for (int i = 0; i < m; i++)
+            cout << "g_" << i + 1 << "(x)\t= " << g_strings[i] << endl;
+    }
     // 1. Work out dimension and degree of each polynomial
     // Parse f(x)
     PolyInfo f_info = infer_dim_and_n_terms(f_string, false);
-    if (f_info.degree == 0) {cout << "Cannot minimize a constant." << endl; return;}
+    vector<PolyInfo> g_infos;
+    for (int j = 0; j < m; j++)
+        g_infos.push_back(infer_dim_and_n_terms(g_strings[j], false));
+    int n = f_info.dimension;
+    for (int j = 0; j < m; j++)
+        n = max(n, g_infos[j].dimension);  // Increase n to match highest-dimensional constraint if necessary
+    f_info.dimension = n;
+    for (int j = 0; j < m; j++)
+        g_infos[j].dimension = n;
+
+    if (f_info.degree == 0) {
+        cout << "Cannot minimize a constant." << endl;
+        return make_tuple(obj_val, problem_status, solution_status_primal, solution_status_dual);
+    }
     vector<double> f_mono_coeffs(f_info.n_terms, 0.0); // List of monomial coefficients
     vector<vector<int> > f_mono_exponents(f_info.n_terms, vector<int>(f_info.dimension, 0));
     parse_poly(f_string, f_mono_coeffs, f_mono_exponents, f_info, false);
 
     // Parse g_1(x), ..., g_m(x)
-    vector<PolyInfo> g_infos;
     vector<vector <double> > g_mono_coeffs;
     vector<vector <vector <int> > > g_mono_exponents;
     for (int j = 0; j < m; j++) {
-        g_infos.push_back(infer_dim_and_n_terms(g_strings[j], false));
         if (g_infos.back().n_terms == 0) {
             g_infos.pop_back();  // Delete last polynomial because it was most likely just an empty space character
             cout << "  Polynomial g(" << j + 1 << ") has no terms: [" << g_strings[j] << "]. Skipping." << endl;
@@ -494,14 +515,13 @@ void sos_level_d(string& f_string, vector<string>& g_strings, int d_request, str
     int d = compute_d(f_info, g_infos, d_request);
 
     // 3. Work out number of PSD matrices and their sizes
-    int n = f_info.dimension;
-    for (int j = 0; j < m; j++)
-        n = max(n, g_infos[j].dimension);  // Increase n to match highest-dimensional constraint if necessary
+
     unsigned long int s_of_d = n_monomials(n, d);
 
     // 4. Create Mosek model and data entries of correct dimensions
     timestamp_t t1, t2;
-    cout << "Creating MOSEK variables and " << positivity_condition << " positivity constraints... " << flush;
+    if (output_level > 0)
+        cout << "Creating MOSEK variables and " << positivity_condition << " positivity constraints... " << flush;
     t1 = timenow();
         auto tuple_out = create_mosek_model(f_info, g_infos, n, d, s_of_d, positivity_condition);
         Model::t M = get<0>(tuple_out); Variable::t lambda = get<1>(tuple_out);
@@ -509,15 +529,18 @@ void sos_level_d(string& f_string, vector<string>& g_strings, int d_request, str
         Variable::t sigma_0 = get<2>(tuple_out); vector<Variable::t> sigma_j = get<3>(tuple_out);
         vector<unsigned long int> s_of_d_minus_djs = get<4>(tuple_out);
     t2 = timenow();
-    cout << "done in " << time_string(t2 - t1) << "." << endl << "  Matrix side lengths are " << s_of_d << ", ";
-    for (int j = 0; j < m ; j++) {cout << s_of_d_minus_djs[j] << ", "; } cout << "\b\b." << endl;
-
+    if (output_level > 0) {
+        cout << "done in " << time_string(t2 - t1) << "." << endl << "  Matrix side lengths are " << s_of_d << ", ";
+        for (int j = 0; j < m; j++) { cout << s_of_d_minus_djs[j] << ", "; }
+        cout << "\b\b." << endl;
+    }
     // 5. Populate Mosek model from input data
     t1 = timenow();
         create_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents, n, d, s_of_d,
-                             lambda, sigma_0, sigma_j, s_of_d_minus_djs);
+                             lambda, sigma_0, sigma_j, s_of_d_minus_djs, output_level);
     t2 = timenow();
-    cout << "\b\b\b\b done in " << time_string(t2 - t1) << "." << endl;
+    if (output_level > 0)
+        cout << "\b\b\b\b done in " << time_string(t2 - t1) << "." << endl;
 
     // 6. Solve and collect optimality information
     cout << "Solving..." << flush;
@@ -538,6 +561,7 @@ void sos_level_d(string& f_string, vector<string>& g_strings, int d_request, str
             if (s_of_d_minus_djs[j] <= max_matrix_print_size)
                 print_vec("sigma_" + to_string(j + 1), (*sol_sigma_j));
         }
+        obj_val = M->primalObjValue();
     }
     catch (mosek::fusion::SolutionError& e) {
         cout << color_yellow << " Didn't solve!\n  " << e.toString() << color_reset << endl;
@@ -548,4 +572,11 @@ void sos_level_d(string& f_string, vector<string>& g_strings, int d_request, str
     catch (const exception& e) {
         cout << color_red << " Generic exception:\n  " << e.what() << color_reset << endl;
     }
+
+
+    problem_status = M->getProblemStatus();
+    solution_status_primal = M->getPrimalSolutionStatus();
+    solution_status_dual = M->getDualSolutionStatus();
+
+    return make_tuple(obj_val, problem_status, solution_status_primal, solution_status_dual);
 }

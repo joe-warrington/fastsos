@@ -96,11 +96,11 @@ void run_polynomial_parser_tests() {
                                                         {{1, 0, 0}, {0, 0, 2}},
                                                         {{1, 0, 0}, {0, 0, 2}},
                                                         {{1, 0}, {0, 2}}};
-    int poly_count = 0;
+    int test_count = 0;
     int fail_count = 0;
 
     for (int i = 0; i < coeffs_to_match.size(); i++) {
-        poly_count++;
+        test_count++;
         tuple<bool, bool, bool, PolyInfo, vector<double>, vector<vector<int> >> test_passed =
                 test_polynomial_parse(input_strings[i], info_to_match[i], coeffs_to_match[i], exponents_to_match[i]);
         if (!get<0>(test_passed) || !get<1>(test_passed) || !get<2>(test_passed)) {
@@ -131,10 +131,89 @@ void run_polynomial_parser_tests() {
             cout  << "#" << i + 1 << "\t" << color_green << "PASS: " << input_strings[i] << " parsed correctly." << color_reset << endl;
     }
     if (fail_count > 0)
-        cout << "WARNING: " << fail_count << "/" << poly_count << " polynomial parsing tests failed." << endl;
+        cout << "WARNING: " << fail_count << "/" << test_count << " polynomial parsing tests failed." << endl;
     else
-        cout << "All " << poly_count << " polynomial parsing tests passed.\n";
+        cout << "All " << test_count << " polynomial parsing tests passed.\n";
         cout << "--------------------------------------------------------------\n\n";
+}
+
+tuple<bool, bool, bool, bool, double> test_sos_program(
+        string& obj_in, vector<string> constrs_in, int d_in, string pos_cert_in,
+        tuple<bool, bool, double, double, bool> expected_result_in) {
+
+    bool obj_val_correct = false;
+    bool primal_status_correct = false;
+    bool dual_status_correct = false;
+    bool problem_status_correct = false;
+
+    auto sol_info = sos_level_d(obj_in, constrs_in, d_in, pos_cert_in, 0);
+
+    double obj_val = get<0>(sol_info);
+    ProblemStatus problem_status = get<1>(sol_info);
+    SolutionStatus solution_status_primal = get<2>(sol_info);
+    SolutionStatus solution_status_dual = get<3>(sol_info);
+
+    bool expected_primal_feasible = get<0>(expected_result_in);
+    bool expected_primal_bounded = get<1>(expected_result_in);
+    double expected_obj_val = get<2>(expected_result_in);
+    double expected_tolerance = get<3>(expected_result_in);
+    bool expected_num_problems = get<4>(expected_result_in);
+
+    bool report_obj_value = false;
+
+    // Check overall status returned by problem and set correctness flags accordingly
+    switch (problem_status) {
+        case ProblemStatus::PrimalAndDualFeasible :
+            report_obj_value = true;
+            if (solution_status_primal == SolutionStatus::Optimal && solution_status_dual == SolutionStatus::Optimal) {
+                if (abs(obj_val - expected_obj_val) <= expected_tolerance) {
+                    obj_val_correct = true;
+                }
+            }
+            if (expected_primal_feasible) primal_status_correct = true;
+            if (expected_primal_bounded) dual_status_correct = true;
+            if (expected_primal_feasible && expected_primal_bounded) problem_status_correct = true;
+            break;
+        case ProblemStatus::PrimalFeasible :
+            if (solution_status_primal == SolutionStatus::Optimal && solution_status_dual == SolutionStatus::Optimal) {
+                if (abs(obj_val - expected_obj_val) <= expected_tolerance) {
+                    obj_val_correct = true;
+                }
+            }
+            break;
+        case ProblemStatus::PrimalInfeasible :
+            obj_val_correct = true; // Objective value deemed correct if problem is infeasible or unbounded
+            break;
+        case ProblemStatus::PrimalInfeasibleOrUnbounded :
+            break;
+        case ProblemStatus::DualFeasible :
+            break;
+        case ProblemStatus::DualInfeasible :
+            if (expected_primal_feasible) primal_status_correct = true;
+            if (!expected_primal_bounded) dual_status_correct = true;
+            if (expected_primal_feasible && !expected_primal_bounded) problem_status_correct = true;
+            obj_val_correct = true; // Objective value deemed correct if problem is infeasible or unbounded
+            break;
+        case ProblemStatus::PrimalAndDualInfeasible :
+            obj_val_correct = true; // Objective value deemed correct if problem is infeasible or unbounded
+            break;
+        case ProblemStatus::IllPosed :
+            cout << "";
+            break;
+        case ProblemStatus::Unknown :
+            if (expected_num_problems) problem_status_correct = true;
+            primal_status_correct = true;
+            dual_status_correct = true;
+            obj_val_correct = true; // Objective value deemed correct if problem is infeasible or unbounded
+            break;
+    }
+
+    if (report_obj_value) cout << "Objective value:\t" << obj_val << endl;
+    cout << "Problem status:\t\t" << problem_status << endl;
+    cout << "Primal solution status:\t" << solution_status_primal << endl;
+    cout << "Dual solution status:\t" << solution_status_dual << endl;
+
+    return make_tuple(obj_val_correct, primal_status_correct, dual_status_correct, problem_status_correct, obj_val);
 }
 
 void run_sos_program_tests() {
@@ -142,46 +221,105 @@ void run_sos_program_tests() {
     vector<string> input_objs = {"x1",
                                  "x1",
                                  "x1",
+                                 "0.5 + x1^1",
+                                 "x2",
                                  "x1 + x2"};
-    vector<vector<string> > input_constrs = {{"x1", "1 - x1"},
-                                             {},
+    vector<vector<string> > input_constrs = {{"x1 + 0.5", "0.5 - x1"},
+                                             {"-x1"},
                                              {"-x1", "x1 - 1"},
-                                             {"-x_1^2 - x_2^2 + 1"}};
+                                             {"-x1^2 - x2^2 + 1"},
+                                             {"-x1^2 - x2^2 + 1"},
+                                             {"-x1^2 - x2^2 + 1"}};
     vector<int> relaxation_degree = {2,
+                                     2,
+                                     2,
                                      2,
                                      2,
                                      2};
     vector<string> positivity_certs = {"PSD",
                                        "PSD",
                                        "PSD",
+                                       "PSD",
+                                       "PSD",
                                        "PSD"};
     vector<bool> primal_feasible = {true,
                                     true,
                                     false,
+                                    true,
+                                    true,
                                     true};
     vector<bool> primal_bounded = {true,
                                    false,
                                    true,
+                                   true,
+                                   true,
                                    true};
-    vector<double> opt_values = {0.0,
+    vector<double> opt_values = {-0.5,
                                  0.0,
                                  0.0,
+                                 -0.5,
+                                 -1.0,
                                  -1.41421};
     vector<double> sol_tols = {1e-6,
                                1e-6,
                                1e-6,
+                               1e-4,
+                               1e-4,
                                1e-4};
+    vector<bool> num_problems = {false,
+                                 true,
+                                 false,
+                                 false,
+                                 false,
+                                 false};
 
     int n_tests = input_objs.size();
 
-    for (int i = 0; i < n_tests; i++) {
-        sos_level_d(input_objs[i], input_constrs[i], relaxation_degree[i], positivity_certs[i]);
-    }
+    int test_count = 0;
+    int fail_count = 0;
+    tuple<bool, bool, double, double, bool> expected_result;
+    tuple<bool, bool, bool, bool, double> test_output;
 
+    for (int i = 0; i < n_tests; i++) {
+        test_count++;
+        string problem_string = "min " + input_objs[i];
+        if (input_constrs[i].size() > 0) problem_string += "   s.t.  ";
+        for (int j = 0; j < input_constrs[i].size(); j++)
+            problem_string += input_constrs[i][j] + " >= 0,  ";
+        cout << "#" << i + 1 << "\t" << problem_string << "\b\b" << endl;
+        expected_result = make_tuple(primal_feasible[i], primal_bounded[i], opt_values[i], sol_tols[i], num_problems[i]);
+
+        test_output = test_sos_program(input_objs[i], input_constrs[i], relaxation_degree[i], positivity_certs[i], expected_result);
+
+        if (!get<0>(test_output) || !get<1>(test_output) || !get<2>(test_output) || !get<3>(test_output)) {
+            cout << color_red << "FAIL: ";
+            if (!get<0>(test_output)) {
+                cout << "Objective value is incorrect: " << get<4>(test_output) << " instead of "
+                        << opt_values[i] << " +- " << sol_tols[i] << endl;
+            }
+            if (!get<1>(test_output)) {
+                cout << "Primal feasibility status is incorrect." << endl;
+            }
+            if (!get<2>(test_output)) {
+                cout << "Primal boundedness status is incorrect." << endl;
+            }
+            if (!get<3>(test_output)) {
+                cout << "Overall solution status is incorrect." << endl;
+            }
+            fail_count++;
+            cout << color_reset << "\n";
+        } else
+            cout << color_green << "PASS: solution behaved as expected.\n" << color_reset << endl;
+    }
+    if (fail_count > 0)
+        cout << "WARNING: " << fail_count << "/" << test_count << " SOS programming tests failed." << endl;
+    else
+        cout << "All " << test_count << " SOS programming tests passed.\n";
+    cout << "--------------------------------------------------------------\n\n";
 }
 
 void run_tests() {
-    cout << "Running SOS code in test mode...\n";
+    cout << "Running in test mode...\n";
     cout << "--------------------------------------------------------------\n\n";
     run_polynomial_parser_tests();
     run_sos_program_tests();
