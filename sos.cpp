@@ -143,6 +143,48 @@ T sum_vec(const vector <T>& v) {
     return output;
 }
 
+void eliminate_unused_dims(int& n, vector<vector<int> >& f_exps, vector<vector<vector<int> > >& g_exps_list, int output_level) {
+    // Go through dimensions and check that there is something non-zero in one of the constraints or the objective
+    // Eliminate any dimensions where nothing appears.
+    int m = g_exps_list.size();
+    int dims_to_subtract = 0;
+    bool dimension_used;
+
+    for (int i = n - 1; i >= 0; i--) { // Loop over dimensions
+        dimension_used = false;
+        for (int t = 0; t < f_exps.size(); t++) {  // Loop over terms of f
+            if (f_exps[t][i] != 0) {  // Check for non-zero entry in ith dimension of term t
+                dimension_used = true;
+                break;
+            }
+        }
+        for (int j = 0; j < m; j++) {
+            for (int t = 0; t < g_exps_list[j].size(); t++) {
+                if (g_exps_list[j][t][i] != 0) {
+                    dimension_used = true;
+                    break;
+                }
+            }
+        }
+        if (!dimension_used) {
+            dims_to_subtract++;
+            for (int t = 0; t < f_exps.size(); t++) {  // Loop over terms of f
+                f_exps[t].erase(f_exps[t].begin() + i);
+            }
+            for (int j = 0; j < m; j++) {
+                for (int t = 0; t < g_exps_list[j].size(); t++) {
+                    g_exps_list[j][t].erase(g_exps_list[j][t].begin() + i);
+                }
+            }
+            if (output_level > 0)
+                cout << "Eliminated the unused dimension x" << i + 1 << " before any other processing took place.\n";
+        }
+    }
+
+    n -= dims_to_subtract; // External scope will now see the reduced dimension of n, before calculating monomial lists
+
+}
+
 vector<vector <int> > generate_all_exponents(const int n, const int d, int output_level) {
     unsigned long int s_of_d = n_monomials(n, d);
     vector<int> blank_row(n, 0);
@@ -510,6 +552,8 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
         parse_poly(g_strings[j], g_mono_coeffs[j], g_mono_exponents[j], g_infos[j], false);
     }
     m = g_infos.size(); // Update m to account for skipped strings containing no terms
+
+    eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, 1);  // Update n and input data, removing unused dims
 
     // 2. Work out minimum legal d for SOS problem and set d to this if necessary
     int d = compute_d(f_info, g_infos, d_request);

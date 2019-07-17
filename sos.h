@@ -17,6 +17,8 @@ unsigned long int a_choose_b(int a, int b);
 
 unsigned long int n_monomials(int n, int d);
 
+void eliminate_unused_dims(int& n, vector<vector<int> >& f_exps, vector<vector<vector<int> > >& g_exps_list, int output_level);
+
 vector<vector <int> > generate_all_exponents(int n, int d, int output_level);
 
 void constrain_to_cone(Model::t& M, Variable::t& matrix_var, int matrix_size, string& cone_type);

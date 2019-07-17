@@ -28,7 +28,7 @@ tuple<bool, bool, bool, PolyInfo, vector<double>, vector<vector<int> >> test_pol
     return make_tuple(info_match, coeffs_match, exponents_match, poly_info, coeffs_output, exponents_output);
 }
 
-void run_polynomial_parser_tests() {
+tuple<int, int> run_polynomial_parser_tests() {
 
     cout << "Testing polynomial parser..." << endl;
 
@@ -134,7 +134,9 @@ void run_polynomial_parser_tests() {
         cout << "WARNING: " << fail_count << "/" << test_count << " polynomial parsing tests failed." << endl;
     else
         cout << "All " << test_count << " polynomial parsing tests passed.\n";
-        cout << "--------------------------------------------------------------\n\n";
+
+    cout << "--------------------------------------------------------------\n\n";
+    return make_tuple(test_count - fail_count, test_count);
 }
 
 tuple<bool, bool, bool, bool, double> test_sos_program(
@@ -216,7 +218,7 @@ tuple<bool, bool, bool, bool, double> test_sos_program(
     return make_tuple(obj_val_correct, primal_status_correct, dual_status_correct, problem_status_correct, obj_val);
 }
 
-void run_sos_program_tests() {
+tuple<int, int> run_sos_program_tests() {
     cout << "Running SOS program tests..." << endl;
     vector<string> input_objs = {"x1",
                                  "x1",
@@ -228,7 +230,7 @@ void run_sos_program_tests() {
                                              {"-x1"},
                                              {"-x1", "x1 - 1"},
                                              {"-x1^2 - x2^2 + 1"},
-                                             {"-x1^2 - x2^2 + 1"},
+                                             {"-x2^2 - x5^2 + 1"},
                                              {"-x1^2 - x2^2 + 1"}};
     vector<int> relaxation_degree = {2,
                                      2,
@@ -315,12 +317,18 @@ void run_sos_program_tests() {
         cout << "WARNING: " << fail_count << "/" << test_count << " SOS programming tests failed." << endl;
     else
         cout << "All " << test_count << " SOS programming tests passed.\n";
+
     cout << "--------------------------------------------------------------\n\n";
+    return make_tuple(test_count - fail_count, test_count);
 }
 
 void run_tests() {
     cout << "Running in test mode...\n";
     cout << "--------------------------------------------------------------\n\n";
-    run_polynomial_parser_tests();
-    run_sos_program_tests();
+    tuple<int, int> parse_results, program_results;
+    parse_results = run_polynomial_parser_tests();
+    program_results = run_sos_program_tests();
+    cout << "Test summary:\t" << get<0>(parse_results) << "/" << get<1>(parse_results) << " parsing tests passed.\n";
+    cout << "\t\t" << get<0>(program_results) << "/" << get<1>(program_results) << " SOS programming tests passed.\n";
+    cout << "--------------------------------------------------------------\n";
 }
