@@ -3,3 +3,5 @@ scratch/*
 .DS_Store
 cmake-build-debug/*
 input_*
+literature/*
+
