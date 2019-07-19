@@ -38,6 +38,7 @@ int main(int argc, char * argv[]) {
 
     string line, poly_string;
     vector<string> constr_strings(0, "");
+    vector<string> eq_constr_strings(0, "");
 
     ifstream inFile;
     inFile.open("../input.txt");
@@ -60,6 +61,6 @@ int main(int argc, char * argv[]) {
 //    string poly_string = "x_1^4 - 10x_1^3 + x_1^1";
 //    string poly_string = "x_n1^4 x_2^2 + x_1^2 x_2^4 - 3x_1^2 x_2^2 + 1";
 
-    auto sol_info = sos_level_d(poly_string, constr_strings, d, positivity_condition, 1);
+    auto sol_info = sos_level_d(poly_string, constr_strings, eq_constr_strings, d, positivity_condition, 1);
     return 0;
 }

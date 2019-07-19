@@ -2,4 +2,4 @@
 scratch/*
 .DS_Store
 cmake-build-debug/*
-input1.txt
+input_*

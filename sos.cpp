@@ -114,7 +114,7 @@ string monomial_to_string(const vector<int> v_in) {
     string s_out = "";
     for (int i = 0; i < v_in.size(); i++) {
         if (v_in[i] > 0)
-            s_out += "x_" + to_string(i + 1) + "^" + to_string(v_in[i]);
+            s_out += "x" + to_string(i + 1) + "^" + to_string(v_in[i]);
     }
     if (s_out == "")
         s_out = "1";  // If all exponents are zero, set the string representation to "1"
@@ -143,10 +143,12 @@ T sum_vec(const vector <T>& v) {
     return output;
 }
 
-void eliminate_unused_dims(int& n, vector<vector<int> >& f_exps, vector<vector<vector<int> > >& g_exps_list, int output_level) {
+void eliminate_unused_dims(int& n, vector<vector<int> >& f_exps, vector<vector<vector<int> > >& g_exps_list,
+                           vector<vector<vector<int> > >& h_exps_list, int output_level) {
     // Go through dimensions and check that there is something non-zero in one of the constraints or the objective
     // Eliminate any dimensions where nothing appears.
     int m = g_exps_list.size();
+    int p = h_exps_list.size();
     int dims_to_subtract = 0;
     bool dimension_used;
 
@@ -166,6 +168,14 @@ void eliminate_unused_dims(int& n, vector<vector<int> >& f_exps, vector<vector<v
                 }
             }
         }
+        for (int j = 0; j < p; j++) {
+            for (int t = 0; t < h_exps_list[j].size(); t++) {
+                if (h_exps_list[j][t][i] != 0) {
+                    dimension_used = true;
+                    break;
+                }
+            }
+        }
         if (!dimension_used) {
             dims_to_subtract++;
             for (int t = 0; t < f_exps.size(); t++) {  // Loop over terms of f
@@ -174,6 +184,11 @@ void eliminate_unused_dims(int& n, vector<vector<int> >& f_exps, vector<vector<v
             for (int j = 0; j < m; j++) {
                 for (int t = 0; t < g_exps_list[j].size(); t++) {
                     g_exps_list[j][t].erase(g_exps_list[j][t].begin() + i);
+                }
+            }
+            for (int j = 0; j < p; j++) {
+                for (int t = 0; t < h_exps_list[j].size(); t++) {
+                    h_exps_list[j][t].erase(h_exps_list[j][t].begin() + i);
                 }
             }
             if (output_level > 0)
@@ -236,8 +251,11 @@ vector<vector <int> > generate_all_exponents(const int n, const int d, int outpu
     return vec_out;
 }
 
-void constrain_to_cone(Model::t& M, Variable::t& matrix_var, const int matrix_size, string& cone_type) {
-    if (cone_type == "PSD") {
+void constrain_to_cone(Model::t& M, Variable::t& matrix_var, const int matrix_size, const string& cone_type) {
+    if (cone_type == "Sym") {
+        M->constraint(Expr::sub(matrix_var, Expr::transpose(matrix_var)), Domain::equalsTo(0.0));  // make symmetric
+        return;
+    } else if (cone_type == "PSD") {
         M->constraint(Expr::sub(matrix_var, Expr::transpose(matrix_var)), Domain::equalsTo(0.0));  // make symmetric
         M->constraint(matrix_var, Domain::inPSDCone(matrix_size));  // Symmetric positive definite matrix
         return;
@@ -311,8 +329,10 @@ void constrain_to_cone(Model::t& M, Variable::t& matrix_var, const int matrix_si
     }
 }
 
-tuple<Model::t, Variable::t, Variable::t, vector<Variable::t>, vector<unsigned long int> > create_mosek_model(
-        PolyInfo& f_info, vector<PolyInfo>& g_infos, int n, int d, unsigned long int s_of_d, string positivity_condition) {
+tuple<Model::t, Variable::t, Variable::t, vector<Variable::t>, vector<unsigned long int>,
+        vector<Variable::t>, vector<unsigned long int> > create_mosek_model(
+        PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
+        int n, int d, unsigned long int s_of_d, string positivity_condition) {
     Model::t M = new Model("SOS");
     // Create variables and objective function
     string var_name;
@@ -331,15 +351,29 @@ tuple<Model::t, Variable::t, Variable::t, vector<Variable::t>, vector<unsigned l
         sigma_j.push_back(M->variable(var_name, Domain::unbounded((int) s_of_d_minus_djs[j], (int) s_of_d_minus_djs[j])));
         constrain_to_cone(M, sigma_j[j], s_of_d_minus_djs[j], positivity_condition);
     }
+    int p = h_infos.size();
+    vector<Variable::t> tau_j;
+    vector<unsigned long int> s_of_d_minus_dj2s;
+    int dj2;
+    for (int j = 0; j < p; j++) {
+        dj2 = ceil(h_infos[j].degree / 2.0);
+        s_of_d_minus_dj2s.push_back(n_monomials(n, d - dj2));
+        var_name = "tau_" + to_string(j + 1);
+        tau_j.push_back(M->variable(var_name, Domain::unbounded((int) s_of_d_minus_dj2s[j], (int) s_of_d_minus_dj2s[j])));
+        constrain_to_cone(M, tau_j[j], s_of_d_minus_dj2s[j], "Sym");
+    }
     M->objective(ObjectiveSense::Maximize, lambda);
+//    M->acceptedSolutionStatus(AccSolutionStatus.Anything);
 //    M->setSolverParam("presolveUse", "off");
-    return make_tuple(M, lambda, sigma_0, sigma_j, s_of_d_minus_djs);
+    return make_tuple(M, lambda, sigma_0, sigma_j, s_of_d_minus_djs, tau_j, s_of_d_minus_dj2s);
 }
 
-int compute_d(PolyInfo f_info, vector<PolyInfo> g_infos, int d_request) {
+int compute_legal_d(PolyInfo f_info, vector<PolyInfo> g_infos, vector<PolyInfo> h_infos, int d_request) {
     int d_min = (int) ceil(f_info.degree / 2.0);
     for (int j = 0; j < g_infos.size(); j++)
         d_min = max(d_min, (int) ceil(g_infos[j].degree / 2.0));
+    for (int j = 0; j < h_infos.size(); j++)
+        d_min = max(d_min, (int) ceil(h_infos[j].degree / 2.0));
     if (d_request < d_min) {
         cout << "Using minimum legal d = " << d_min << ", which is > your choice of d = " << d_request << endl;
     }
@@ -348,8 +382,10 @@ int compute_d(PolyInfo f_info, vector<PolyInfo> g_infos, int d_request) {
 
 void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vector<int> >& f_mono_exponents,
                           vector<vector <double> >& g_mono_coeffs, vector<vector <vector <int> > >& g_mono_exponents,
+                          vector<vector <double> >& h_mono_coeffs, vector<vector <vector <int> > >& h_mono_exponents,
                           int n, int d, unsigned long int s_of_d, Variable::t& lambda, Variable::t& sigma_0,
-                          vector<Variable::t>& sigma_j, vector<unsigned long int>& s_of_d_minus_djs, int output_level) {
+                          vector<Variable::t>& sigma_j, vector<unsigned long int>& s_of_d_minus_djs,
+                          vector<Variable::t>& tau_j, vector<unsigned long int>& s_of_d_minus_dj2s, int output_level) {
     // For monomials in s(2d), find all entries (alpha, beta) for which x^(alpha+beta) = monomial.
     // For the entries of s(2d) for which there is a term in f, set RHS of constraint to the coefficient. Otherwise 0.
 
@@ -366,7 +402,7 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
     int new_mod = 0, old_mod = 0;
     auto constr_lhs = Expr::constTerm(0.0);
     vector<int> exponent_to_add(n, 0);
-    int degree_to_add;
+//    int degree_to_add;
     bool check_this_k1;
 
 //    cout << "Eliminating unused monomials by looking for zero entries on the matrix diagonal... " << endl;
@@ -440,12 +476,13 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
             constr_lhs = Expr::mul(1.0, lambda);  // Include lambda in the constant-term coefficient matching
         else
             constr_lhs = Expr::constTerm(0.0);
+        // Entries of sigma_0 matrix
         for (unsigned long int k1 = 0; k1 < s_of_d; k1++) {
             exponent_to_add = sub_vecs(all_2d_exponents[i], all_d_exponents[k1]);
             check_this_k1 = true;
             for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
             if (check_this_k1) {
-                degree_to_add = sum_vec(exponent_to_add);
+//                degree_to_add = sum_vec(exponent_to_add);
 //                for (unsigned long int k2 = max(k1, exponent_degree_start_rows[degree_to_add]);
 //                     k2 < exponent_degree_start_rows[degree_to_add + 1]; k2++) {
                 for (unsigned long int k2 = k1; k2 < s_of_d; k2++) {
@@ -470,7 +507,7 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
                     check_this_k1 = true;
                     for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
                     if (check_this_k1) {
-                        degree_to_add = sum_vec(exponent_to_add);
+//                        degree_to_add = sum_vec(exponent_to_add);
 //                        for (unsigned long int k2 = max(k1, exponent_degree_start_rows[degree_to_add]);
 //                             k2 < min(s_of_d_minus_djs[j], exponent_degree_start_rows[degree_to_add + 1]); k2++) {
                         for (unsigned long int k2 = k1; k2 < s_of_d_minus_djs[j]; k2++) {
@@ -490,6 +527,34 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
                 }
             }
         }
+        for (int j = 0; j < h_mono_coeffs.size(); j++) {  // for all constraint functions g_j(x)
+            for (int t = 0; t < h_mono_coeffs[j].size(); t++) {  // for all terms t in g_j(x)
+                for (unsigned long int k1 = 0; k1 < s_of_d_minus_dj2s[j]; k1++) {
+                    exponent_to_add = sub_vecs(all_2d_exponents[i],
+                                               add_vecs(all_d_exponents[k1], h_mono_exponents[j][t]));
+                    check_this_k1 = true;
+                    for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
+                    if (check_this_k1) {
+//                        degree_to_add = sum_vec(exponent_to_add);
+//                        for (unsigned long int k2 = max(k1, exponent_degree_start_rows[degree_to_add]);
+//                             k2 < min(s_of_d_minus_dj2s[j], exponent_degree_start_rows[degree_to_add + 1]); k2++) {
+                        for (unsigned long int k2 = k1; k2 < s_of_d_minus_dj2s[j]; k2++) {
+                            if (all_d_exponents[k2] == exponent_to_add) {
+                                if (k1 == k2)
+                                    constr_lhs = Expr::add(constr_lhs,
+                                                           Expr::mul(1.0 * h_mono_coeffs[j][t],
+                                                                     tau_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                                else
+                                    constr_lhs = Expr::add(constr_lhs,
+                                                           Expr::mul(2.0 * h_mono_coeffs[j][t],
+                                                                     tau_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         constr_rhs = 0.0;
         for (int t = 0; t < f_mono_coeffs.size(); t++) {
@@ -501,7 +566,8 @@ void create_coeff_matches(Model::t& M, vector<double>& f_mono_coeffs, vector<vec
 }
 
 tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
-        string& f_string, vector<string>& g_strings, int d_request, string& positivity_condition, int output_level) {
+        string& f_string, vector<string>& g_strings, vector<string>& h_strings,
+        int d_request, string& positivity_condition, int output_level) {
 
     double obj_val = 0.0;
     ProblemStatus problem_status;
@@ -510,23 +576,33 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
 
     // 0. State objective and constraints as strings read from file
     int m = g_strings.size();
+    int p = h_strings.size();
     if (output_level > 0) {
         cout << "f(x)\t= " << f_string << endl;
         for (int i = 0; i < m; i++)
             cout << "g_" << i + 1 << "(x)\t= " << g_strings[i] << endl;
+        for (int i = 0; i < p; i++)
+            cout << "h_" << i + 1 << "(x)\t= " << h_strings[i] << endl;
     }
     // 1. Work out dimension and degree of each polynomial
     // Parse f(x)
     PolyInfo f_info = infer_dim_and_n_terms(f_string, false);
     vector<PolyInfo> g_infos;
+    vector<PolyInfo> h_infos;
     for (int j = 0; j < m; j++)
         g_infos.push_back(infer_dim_and_n_terms(g_strings[j], false));
+    for (int j = 0; j < p; j++)
+        h_infos.push_back(infer_dim_and_n_terms(h_strings[j], false));
     int n = f_info.dimension;
     for (int j = 0; j < m; j++)
-        n = max(n, g_infos[j].dimension);  // Increase n to match highest-dimensional constraint if necessary
+        n = max(n, g_infos[j].dimension);  // Increase n to match highest-dimensional ineq constraint if necessary
+    for (int j = 0; j < p; j++)
+        n = max(n, h_infos[j].dimension);  // Increase n to match highest-dimensional eq constraint if necessary
     f_info.dimension = n;
     for (int j = 0; j < m; j++)
         g_infos[j].dimension = n;
+    for (int j = 0; j < p; j++)
+        h_infos[j].dimension = n;
 
     if (f_info.degree == 0) {
         cout << "Cannot minimize a constant." << endl;
@@ -552,11 +628,27 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
         parse_poly(g_strings[j], g_mono_coeffs[j], g_mono_exponents[j], g_infos[j], false);
     }
     m = g_infos.size(); // Update m to account for skipped strings containing no terms
+    // Parse h_1(x), ..., h_p(x)
+    vector<vector <double> > h_mono_coeffs;
+    vector<vector <vector <int> > > h_mono_exponents;
+    for (int j = 0; j < p; j++) {
+        if (h_infos.back().n_terms == 0) {
+            h_infos.pop_back();  // Delete last polynomial because it was most likely just an empty space character
+            cout << "  Polynomial h(" << j + 1 << ") has no terms: [" << h_strings[j] << "]. Skipping." << endl;
+            continue;
+        }
+        vector<double> h_mono_coeffs_entry(h_infos[j].n_terms, 0.0);
+        vector<vector<int> > h_mono_exponents_entry(h_infos[j].n_terms, vector<int>(h_infos[j].dimension, 0));
+        h_mono_coeffs.push_back(h_mono_coeffs_entry);
+        h_mono_exponents.push_back(h_mono_exponents_entry);
+        parse_poly(h_strings[j], h_mono_coeffs[j], h_mono_exponents[j], h_infos[j], false);
+    }
+    p = h_infos.size(); // Update m to account for skipped strings containing no terms
 
-    eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, 1);  // Update n and input data, removing unused dims
+    eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, h_mono_exponents, 1);  // Update n and input data, removing unused dims
 
     // 2. Work out minimum legal d for SOS problem and set d to this if necessary
-    int d = compute_d(f_info, g_infos, d_request);
+    int d = compute_legal_d(f_info, g_infos, h_infos, d_request);
 
     // 3. Work out number of PSD matrices and their sizes
 
@@ -567,21 +659,25 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
     if (output_level > 0)
         cout << "Creating MOSEK variables and " << positivity_condition << " positivity constraints... " << flush;
     t1 = timenow();
-        auto tuple_out = create_mosek_model(f_info, g_infos, n, d, s_of_d, positivity_condition);
+        auto tuple_out = create_mosek_model(f_info, g_infos, h_infos, n, d, s_of_d, positivity_condition);
         Model::t M = get<0>(tuple_out); Variable::t lambda = get<1>(tuple_out);
         auto _M = finally([&]() { M->dispose(); });
         Variable::t sigma_0 = get<2>(tuple_out); vector<Variable::t> sigma_j = get<3>(tuple_out);
+        vector<Variable::t> tau_j = get<5>(tuple_out);
         vector<unsigned long int> s_of_d_minus_djs = get<4>(tuple_out);
+        vector<unsigned long int> s_of_d_minus_dj2s = get<6>(tuple_out);
     t2 = timenow();
     if (output_level > 0) {
         cout << "done in " << time_string(t2 - t1) << "." << endl << "  Matrix side lengths are " << s_of_d << ", ";
         for (int j = 0; j < m; j++) { cout << s_of_d_minus_djs[j] << ", "; }
+        for (int j = 0; j < p; j++) { cout << s_of_d_minus_dj2s[j] << ", "; }
         cout << "\b\b." << endl;
     }
     // 5. Populate Mosek model from input data
     t1 = timenow();
-        create_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents, n, d, s_of_d,
-                             lambda, sigma_0, sigma_j, s_of_d_minus_djs, output_level);
+        create_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
+                             h_mono_coeffs, h_mono_exponents, n, d, s_of_d,
+                             lambda, sigma_0, sigma_j, s_of_d_minus_djs, tau_j, s_of_d_minus_dj2s, output_level);
     t2 = timenow();
     if (output_level > 0)
         cout << "\b\b\b\b done in " << time_string(t2 - t1) << "." << endl;
@@ -604,6 +700,11 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
             auto sol_sigma_j = sigma_j[j]->level();
             if (s_of_d_minus_djs[j] <= max_matrix_print_size)
                 print_vec("sigma_" + to_string(j + 1), (*sol_sigma_j));
+        }
+        for (int j = 0; j < p; j++) {
+            auto sol_tau_j = tau_j[j]->level();
+            if (s_of_d_minus_dj2s[j] <= max_matrix_print_size)
+                print_vec("tau_" + to_string(j + 1), (*sol_tau_j));
         }
         obj_val = M->primalObjValue();
     }

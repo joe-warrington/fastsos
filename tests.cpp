@@ -140,7 +140,7 @@ tuple<int, int> run_polynomial_parser_tests() {
 }
 
 tuple<bool, bool, bool, bool, double> test_sos_program(
-        string& obj_in, vector<string> constrs_in, int d_in, string pos_cert_in,
+        string& obj_in, vector<string> ineq_constrs_in, vector<string> eq_constrs_in, int d_in, string pos_cert_in,
         tuple<bool, bool, double, double, bool> expected_result_in) {
 
     bool obj_val_correct = false;
@@ -148,7 +148,7 @@ tuple<bool, bool, bool, bool, double> test_sos_program(
     bool dual_status_correct = false;
     bool problem_status_correct = false;
 
-    auto sol_info = sos_level_d(obj_in, constrs_in, d_in, pos_cert_in, 0);
+    auto sol_info = sos_level_d(obj_in, ineq_constrs_in, eq_constrs_in, d_in, pos_cert_in, 1);
 
     double obj_val = get<0>(sol_info);
     ProblemStatus problem_status = get<1>(sol_info);
@@ -225,20 +225,33 @@ tuple<int, int> run_sos_program_tests() {
                                  "x1",
                                  "0.5 + x1^1",
                                  "x2",
+                                 "x1 + x2",
                                  "x1 + x2"};
-    vector<vector<string> > input_constrs = {{"x1 + 0.5", "0.5 - x1"},
-                                             {"-x1"},
-                                             {"-x1", "x1 - 1"},
-                                             {"-x1^2 - x2^2 + 1"},
-                                             {"-x2^2 - x5^2 + 1"},
-                                             {"-x1^2 - x2^2 + 1"}};
+    vector<vector<string> > input_ineq_constrs = {{"x1 + 0.5", "0.5 - x1"},
+                                                  {"-x1"},
+                                                  {"-x1", "x1 - 1"},
+                                                  {"-x1^2 - x2^2 + 1"},
+                                                  {"-x2^2 - x5^2 + 1"},
+                                                  {"-x1^2 + 7.0x1 - x2^2 + 7.0x2 - 12.25"},
+                                                  {"-x1^2 + 7.0x1 - x2^2 + 7.0x2 - 12.25"}};
+    vector<vector<string> > input_eq_constrs = {{},
+                                                {},
+                                                {},
+                                                {},
+                                                {},
+                                                {"x1 - x3 - 2x4 - 4x5", "x2 - x6 - 2x7 - 4x8", "x3^2 - x3",
+                                                 "x4^2 - x4", "x5^2 - x5", "x6^2 - x6", "x7^2 - x7", "x8^2 - x8"},
+                                                {"x1 - x3 - 2x4 - 4x5", "x2 - x6 - 2x7 - 4x8", "x3^2 - x3",
+                                                        "x4^2 - x4", "x5^2 - x5", "x6^2 - x6", "x7^2 - x7", "x8^2 - x8"}};
     vector<int> relaxation_degree = {2,
                                      2,
                                      2,
                                      2,
                                      2,
+                                     1,
                                      2};
     vector<string> positivity_certs = {"PSD",
+                                       "PSD",
                                        "PSD",
                                        "PSD",
                                        "PSD",
@@ -249,9 +262,11 @@ tuple<int, int> run_sos_program_tests() {
                                     false,
                                     true,
                                     true,
+                                    true,
                                     true};
     vector<bool> primal_bounded = {true,
                                    false,
+                                   true,
                                    true,
                                    true,
                                    true,
@@ -261,15 +276,18 @@ tuple<int, int> run_sos_program_tests() {
                                  0.0,
                                  -0.5,
                                  -1.0,
-                                 -1.41421};
+                                 2.05025,
+                                 2.33647};
     vector<double> sol_tols = {1e-6,
                                1e-6,
                                1e-6,
                                1e-4,
                                1e-4,
+                               1e-4,
                                1e-4};
     vector<bool> num_problems = {false,
                                  true,
+                                 false,
                                  false,
                                  false,
                                  false,
@@ -285,13 +303,16 @@ tuple<int, int> run_sos_program_tests() {
     for (int i = 0; i < n_tests; i++) {
         test_count++;
         string problem_string = "min " + input_objs[i];
-        if (input_constrs[i].size() > 0) problem_string += "   s.t.  ";
-        for (int j = 0; j < input_constrs[i].size(); j++)
-            problem_string += input_constrs[i][j] + " >= 0,  ";
+        if (input_ineq_constrs[i].size() > 0) problem_string += "   s.t.  ";
+        for (int j = 0; j < input_ineq_constrs[i].size(); j++)
+            problem_string += input_ineq_constrs[i][j] + " >= 0,  ";
+        for (int j = 0; j < input_eq_constrs[i].size(); j++)
+            problem_string += input_eq_constrs[i][j] + " = 0,  ";
         cout << "#" << i + 1 << "\t" << problem_string << "\b\b" << endl;
         expected_result = make_tuple(primal_feasible[i], primal_bounded[i], opt_values[i], sol_tols[i], num_problems[i]);
 
-        test_output = test_sos_program(input_objs[i], input_constrs[i], relaxation_degree[i], positivity_certs[i], expected_result);
+        test_output = test_sos_program(input_objs[i], input_ineq_constrs[i], input_eq_constrs[i],
+                                       relaxation_degree[i], positivity_certs[i], expected_result);
 
         if (!get<0>(test_output) || !get<1>(test_output) || !get<2>(test_output) || !get<3>(test_output)) {
             cout << color_red << "FAIL: ";

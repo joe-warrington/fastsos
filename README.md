@@ -1,14 +1,16 @@
-# SoSchnell sum-of-squares parser
+# FastSOS sum-of-squares parser
 
 ## About
 
-SoSchnell is a parser for polynomial optimization that reads in a problem of the form 
+FastSOS is a parser for polynomial optimization that reads in a problem of the form 
 
-> min f(x) = x_1 + x_2,
-> s.t. g_1(x) = 1 - x_1^2 - x_2^2 >= 0,
-> g_2(x) = -x_1x_2^2 >= 0
+> min f(x) = x1 + x2,
+
+> s.t. g_1(x) = 1 - x1^2 - x2^2 >= 0, g_2(x) = -x1x2^2 >= 0
+
+> h_1(x) = x1(1 - x1) = 0
     
-where f(x), g_1(x), ..., g_m(x) may be arbitrary polynomials in multiple variables, and solves them via a so-called *sum-of-squares relaxation*, whose degree can be specified. MOSEK (free for academic use) is the only solver supported.
+where f(x), g_1(x), ..., g_m(x), h_1(x), ..., h_p(x) may be arbitrary polynomials in multiple variables, and solves them via a so-called *sum-of-squares relaxation*, whose degree can be specified. MOSEK (free for academic use) is the only solver supported.
 
 ## Requirements
 
@@ -18,7 +20,7 @@ When compiling the code, the paths to MOSEK must also be set correctly in `CMake
 
     DYLD_LIBRARY_PATH
 
-which supplies paths to dynamically-linked libraries for the linker, must also be set (or appended, if the variable is already in use) with `<mosek install dir>/<version number>/tools/platform/osx64x86/bin` in the case of Mac OSX, and similar for other operating systems. At time of writing, the only compilation has been with Mac OS 10.14.1 and MOSEK 9.0.
+which supplies paths to dynamically-linked libraries for the linker, must also be set (or appended, if the variable is already in use) with `<mosek install dir>/<version number>/tools/platform/osx64x86/bin` in the case of Mac OSX, and similar for other operating systems. At time of writing, the only compilation tested has been on Mac OS 10.14.1 with MOSEK 9.0.
 
 ### Running
 
@@ -32,25 +34,25 @@ must be set to the full path of your MOSEK license file. On Mac OSX, the two env
 
 ### Input format
 
-The optimization problem is specified by entering a sequence of polynomials in the file `input.txt`. The first line is the objective function f(x), and the following lines are the constraints g_1(x), g_2(x) etc. Each constraint g_i(x) is interpreted as a polynomial greater than or equal to zero. This is the only kind of constraint allowed. The labels f(x), g_1(x), etc. themselves should not be included. So the file contents for the problem above would be
+The optimization problem is specified by entering a sequence of polynomials in the file `input.txt`. The first line is the objective function f(x), and the following lines are the constraints g_1(x), g_2(x) etc. Each constraint g_i(x) is interpreted as a polynomial greater than or equal to zero. This is the only kind of constraint allowed. The labels f(x), g_1(x), etc. themselves should not be included. So an example legal input file would be
 
-    x_1 + x_2
-    1 - x_1^2 - x_2^2
-    -x_1x_2^2
+    x1 + x2
+    1 - x1^2 - x2^2
+    -x1x2^2
     
-The variables must be called `x_1`, `x_2` etc., and only strictly positive integer exponents are allowed. Constants are also allowed. Each term of the polynomial (monomial) can be an arbitrary multiplication of `x`-variables raised to arbitrary powers, and the dimension and the degree of the polynomial will be inferred from the highest values found in the problem. Brackets and other characters are not currently interpreted. Also, unused coordinates, e.g. only using `x_1` and `x_3` but not `x_2`, will still increase the problem size. So don't do that.
+The variables must be called `x1`, `x2` etc., and only strictly positive integer exponents are allowed. Constants are also allowed. Each term of the polynomial (monomial) can be an arbitrary multiplication of `x`-variables raised to arbitrary powers, and the dimension and the degree of the polynomial will be inferred from the highest values found in the problem. Brackets and other characters are not currently interpreted. Unused coordinates, for example `x2` not appearing in a problem where `x1` and `x3` appear in the cost function or constraints, are automatically eliminated to reduce computational load.
 
 ### Optimization
 
 The parser and solver are then called from the command line as follows:
 
 ```
-soschnell_cl d pos_cert
+fastsos d pos_cert
 ```
     
 In the above, `d` is an integer at least 1 that specifies the *degree* of the sum-of-squares relaxation to use. If the value of `d` is less than the minimum valid for the problem (half the highest degree amongst all the polynomials, rounded up), the minimum legal value will be used, and a message to this effect displayed. 
  
-The argument `pos_cert` must be either `PSD`, `SDSOS`, or `DSOS`, and specifies which positivity certificate to use throughout. These three options are in decreasing order of computational cost, but also generate weaker and weaker relaxations. They stand for *positive semidefinite*, *scaled diagonally-dominant sum-of-squares*, and *diagonally-dominant sum of squares*. 
+The argument `pos_cert` must be either `PSD`, `SDSOS`, or `DSOS`, and specifies which positivity certificate to use throughout. These three options are in decreasing order of computational cost, but also generate weaker and weaker relaxations. They stand for *positive semidefinite*, *scaled diagonally-dominant sum-of-squares*, and *diagonally-dominant sum of squares*. Strictly the latter two should simply be called (scaled) diagonally dominant or (S)DD, as they refer to matrix positivity conditions. However (S)DSOS has become the more common terminology.
 
 The script then parses the polynomials described in `input.txt` and passes the resulting problem to MOSEK. The optimal value of the relaxed problem will be displayed if it was solved successfully. If the solver is not able to return an optimal solution, diagnostic information is displayed.
 
