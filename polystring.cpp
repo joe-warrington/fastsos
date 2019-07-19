@@ -3,7 +3,10 @@
 //
 
 #include <iostream>
+#include <fstream>
 #include <vector>
+#include <tuple>
+#include <string>
 
 //#include "common_structs.h"
 
@@ -242,4 +245,49 @@ void parse_poly(string& s, vector<double>& mono_coeffs, vector<vector<int> >& mo
     if (diag_msg) {
         print_polynomial_table(mono_coeffs, mono_exponents);
     }
+}
+
+tuple<string, vector<string>, vector<string>, bool> read_problem_from_file(const string& filename) {
+    string line, obj_string;
+    vector<string> ineq_constr_strings(0, "");
+    vector<string> eq_constr_strings(0, "");
+    bool success = false;
+
+    int f_count = 0, g_count = 0, h_count = 0;
+
+    ifstream inFile;
+    inFile.open(filename);
+    if (inFile.is_open())
+    {
+        int row_number = 0;
+        while ( getline (inFile, line) ) {
+            if (line.substr(0, 2).compare("f ") == 0) {
+                obj_string = line.substr(2);  // Read objective function from first line, characters 2 to end
+                f_count++;
+            } else if (line.substr(0, 2).compare("g ") == 0) {
+                ineq_constr_strings.push_back(
+                        line.substr(2));  // Read constraint function into vector of constraint strings
+                g_count++;
+            } else if (line.substr(0, 2).compare("h ") == 0) {
+                eq_constr_strings.push_back(
+                        line.substr(2));  // Read constraint function into vector of constraint strings
+                h_count++;
+            } else {
+                cout << "Ignored line " << row_number << " of file " << filename << ":\n\t" << line << endl;
+            }
+            row_number++;
+        }
+        inFile.close();
+    }
+
+    if (f_count == 1 && g_count == ineq_constr_strings.size() && h_count == eq_constr_strings.size()) {
+        success = true;
+        cout << "Problem read from " << filename << " has "
+             << g_count << " inequality constraints, and " << h_count << " equality constraints.\n";
+        }
+    else
+        cout << "WARNING: input file " << filename << " contained " << f_count << " objective terms, "
+        << g_count << " inequality constraints, and " << h_count << " equality constraints.\n";
+
+    return make_tuple(obj_string, ineq_constr_strings, eq_constr_strings, success);
 }

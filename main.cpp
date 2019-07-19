@@ -1,5 +1,5 @@
 #include <iostream>
-#include <fstream>
+
 #include <vector>
 #include "polystring.h"
 #include "sos.h"
@@ -36,31 +36,19 @@ int main(int argc, char * argv[]) {
         return 1;
     }
 
-    string line, poly_string;
-    vector<string> constr_strings(0, "");
-    vector<string> eq_constr_strings(0, "");
+    auto problem_tuple = read_problem_from_file("../input.txt");
 
-    ifstream inFile;
-    inFile.open("../input.txt");
-    if (inFile.is_open())
-    {
-        int row_number = 0;
-        while ( getline (inFile, line) )
-            if (row_number == 0) {
-                poly_string = line;  // Read objective function from first line
-                row_number++;
-            } else {
-                constr_strings.push_back(line);  // Read constraint function into vector of constraint strings
-            }
-        inFile.close();
+    string obj_string = get<0>(problem_tuple);
+    vector<string> ineq_constr_strings = get<1>(problem_tuple);
+    vector<string> eq_constr_strings = get<2>(problem_tuple);
+    bool read_success = get<3>(problem_tuple);
+
+    if (read_success) {
+        auto sol_info = sos_level_d(obj_string, ineq_constr_strings, eq_constr_strings, d, positivity_condition, 1);
+        return 0;
     }
-
-//    char poly_chars[200];
-//    cin.getline(poly_chars, 200, '\n');
-//    string poly_string = poly_chars;
-//    string poly_string = "x_1^4 - 10x_1^3 + x_1^1";
-//    string poly_string = "x_n1^4 x_2^2 + x_1^2 x_2^4 - 3x_1^2 x_2^2 + 1";
-
-    auto sol_info = sos_level_d(poly_string, constr_strings, eq_constr_strings, d, positivity_condition, 1);
-    return 0;
+    else {
+        cout << "Did not read input file successfully. Aborting.\n";
+        return 1;
+    }
 }
