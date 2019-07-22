@@ -1,6 +1,4 @@
-//
-// Created by Joe Warrington on 2019-06-27.
-//
+// (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
 #ifndef GIT_CPPSOS_TESTS_H
 #define GIT_CPPSOS_TESTS_H

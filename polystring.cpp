@@ -1,14 +1,10 @@
-//
-// Created by Joe Warrington on 2019-05-31.
-//
+// (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <tuple>
 #include <string>
-
-//#include "common_structs.h"
 
 using namespace std;
 

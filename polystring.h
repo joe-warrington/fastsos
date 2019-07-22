@@ -1,6 +1,4 @@
-//
-// Created by Joe Warrington on 2019-05-31.
-//
+// (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
 #ifndef GIT_CPPSOS_POLYSTRING_H
 #define GIT_CPPSOS_POLYSTRING_H

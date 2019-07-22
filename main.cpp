@@ -1,3 +1,5 @@
+// (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
+
 #include <iostream>
 
 #include <vector>
