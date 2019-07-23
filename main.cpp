@@ -1,7 +1,6 @@
 // (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
 #include <iostream>
-
 #include <vector>
 #include "polystring.h"
 #include "sos.h"

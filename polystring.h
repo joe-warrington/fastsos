@@ -1,9 +1,9 @@
 // (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
-#ifndef GIT_CPPSOS_POLYSTRING_H
-#define GIT_CPPSOS_POLYSTRING_H
+#ifndef FASTSOS_POLYSTRING_H
+#define FASTSOS_POLYSTRING_H
 
-#endif //GIT_CPPSOS_POLYSTRING_H
+#endif //FASTSOS_POLYSTRING_H
 
 using namespace std;
 

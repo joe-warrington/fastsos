@@ -1,9 +1,9 @@
 // (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
-#ifndef GIT_CPPSOS_TESTS_H
-#define GIT_CPPSOS_TESTS_H
+#ifndef FASTSOS_TESTS_H
+#define FASTSOS_TESTS_H
 
-#endif //GIT_CPPSOS_TESTS_H
+#endif //FASTSOS_TESTS_H
 
 tuple<bool, bool, bool, PolyInfo, vector<double>, vector<vector<int> >> test_polynomial_parse(
         string s, vector<int> info_in, vector<double> coeffs_in, vector<vector<int> > exponents_in);
