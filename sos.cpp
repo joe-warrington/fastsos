@@ -4,6 +4,13 @@
 #include <iomanip>
 #include "mosek.h"
 #include "fusion.h"
+#include "scs.h"
+#include "glbopts.h"
+#include "minunit.h"
+#include "problem_utils.h"
+#include "scs.h"
+#include "util.h"
+
 #include "polystring.h"
 #include "build_mosek.h"
 #include "build_scs.h"
@@ -268,7 +275,7 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
         string& f_string, vector<string>& g_strings, vector<string>& h_strings,
         int d_request, string& positivity_condition, int output_level) {
 
-    char solver[] = "scs";
+    string solver = "scs";
 
     double obj_val = 0.0;
     ProblemStatus problem_status;
@@ -354,7 +361,7 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
     // 3. Work out size of PSD matrix
     unsigned long int s_of_d = n_monomials(n, d);
 
-    if (strcmp(solver, "mosek") == 0) {
+    if (solver == "mosek") {
         // 4. Create Mosek model and data entries of correct dimensions
         timestamp_t t1, t2;
         if (output_level > 0)
@@ -425,8 +432,8 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
         problem_status = M->getProblemStatus();
         solution_status_primal = M->getPrimalSolutionStatus();
         solution_status_dual = M->getDualSolutionStatus();
-    } else if (strcmp(solver, "scs") == 0) {
-
+    } else if (solver == "scs") {
+        timestamp_t t1, t2;
         // 4. Compute sizes of optimization variables
         auto scs_size_data = calc_n_vars(g_infos, h_infos, n, d);
         int scs_n_vars = get<0>(scs_size_data);
@@ -437,7 +444,56 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
             cout << scs_labels[j] << "\tstarts at position " << scs_start_posns[j] << endl;
         // 5. Create SCS model, including cone constraint dimensions and types, but without populating the A matrix or b
 
-        cout << "Solver SCS not implemented." << endl;
+        tuple<ScsCone, ScsData, ScsSolution, ScsInfo> M = create_scs_model(f_info, g_infos, h_infos, n, d, scs_n_vars, positivity_condition);
+
+        // 5. Populate SCS model from input data
+        t1 = timenow();
+        vector<unsigned long int> s_of_d_minus_djs;
+        vector<unsigned long int> s_of_d_minus_dj2s;
+        for (int j = 0; j < g_infos.size(); j++)
+            s_of_d_minus_djs.push_back(n_monomials(n, d - ceil(g_infos[j].degree / 2.0)));
+        for (int j = 0; j < h_infos.size(); j++)
+            s_of_d_minus_dj2s.push_back(n_monomials(n, d - ceil(h_infos[j].degree / 2.0)));
+        create_scs_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
+                                   h_mono_coeffs, h_mono_exponents, n, d, s_of_d,
+                                   s_of_d_minus_djs, s_of_d_minus_dj2s, output_level);
+        t2 = timenow();
+        if (output_level > 0)
+            cout << "\b\b\b\b done in " << time_string(t2 - t1) << "." << endl;
+
+        scs_int exitflag;
+        scs_int success;
+
+        // Solve LP
+        ScsCone k = get<0>(M);
+        ScsData d = get<1>(M);
+        ScsSolution sol = get<2>(M);
+        ScsInfo info = get<3>(M);
+        exitflag = scs(d, k, sol, &info);
+
+        // Collect results
+        success = exitflag == SCS_SOLVED;
+
+        cout << "x* = [";
+        for (int i = 0; i < n; i++)
+            cout << sol.x[i] << " ";
+        cout << "\b]" << endl;
+        cout << "y* = [";
+        for (int i = 0; i < m; i++)
+            cout << sol.y[i] << " ";
+        cout << "\b]" << endl;
+        cout << "s* = [";
+        for (int i = 0; i < m; i++)
+            cout << sol.s[i] << " ";
+        cout << "\b]" << endl;
+
+        SCS(free_data)(d, k);
+        SCS(free_sol)(sol);
+
+        cout << "Solver SCS not fully implemented." << endl;
+    } else {
+        cout << "Unrecognized solver choice: " << solver << endl;
     }
+
     return make_tuple(obj_val, problem_status, solution_status_primal, solution_status_dual);
 }
