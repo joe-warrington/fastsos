@@ -2,25 +2,32 @@
 // Created by Joe Warrington on 2019-07-23.
 //
 
-#include "build_scs.h"
 
 #include <iostream>
+#include <tuple>
+#include <vector>
+#include "polystring.h"
+#include "sos.h"
 #include "glbopts.h"
 #include "minunit.h"
 #include "problem_utils.h"
 #include "scs.h"
 #include "util.h"
 
+#include "build_scs.h"
+
+
 using namespace std;
 
-static const char *simple_lp(void) {
+tuple<ScsCone, ScsData, ScsSolution> create_scs_model(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
+                      int dim, int deg, int total_vars, string positivity_condition) {
     ScsCone *k = (ScsCone *) scs_calloc(1, sizeof(ScsCone));
     ScsData *d = (ScsData *) scs_calloc(1, sizeof(ScsData));
     ScsSolution *sol = (ScsSolution *) scs_calloc(1, sizeof(ScsSolution));
     ScsInfo info = {0};
 
     // Define problem dimensions
-    scs_int n = 2; // Length of optimization vector x
+    scs_int n = total_vars; // Length of optimization vector x
     scs_int m = 3; // Number of equality constraints in Ax + s = b
     scs_int nnz = 4;  // Number of nonzeros in A matrix
     scs_int exitflag;
@@ -31,8 +38,11 @@ static const char *simple_lp(void) {
     d->n = n;
     SCS(set_default_settings)(d);
 
-    k->f = 0;
-    k->l = m - k->f;
+    if (positivity_condition == "PSD") {
+        // Create mixture of zero, free, and PSD cone variables
+        k->f = 0;
+        k->l = m - k->f;
+    }
 
     ScsMatrix *A = d->A = (ScsMatrix *) scs_calloc(1, sizeof(ScsMatrix));
     scs_float *b = d->b = (scs_float *) scs_calloc(m, sizeof(scs_float));
@@ -63,22 +73,6 @@ static const char *simple_lp(void) {
     A->x[2] = -1.0;
     A->x[3] = 1.0;
 
-    /* this test fails with the default choice of 10 */
-    d->stgs->acceleration_lookback = 10;
-
-    bool ws = true;  // Generates segmentation fault if true...
-    if (ws) {
-        d->stgs->warm_start = 1;
-        sol->x[0] = 1.2;
-        sol->x[1] = 1.2;
-        sol->s[0] = 1.2;
-        sol->s[1] = 1.2;
-        sol->s[2] = 0.0;
-        sol->y[0] = 0.0;
-        sol->y[1] = 0.0;
-        sol->y[2] = 1.0;
-    }
-
     // Solve LP
     exitflag = scs(d, k, sol, &info);
 
@@ -100,6 +94,51 @@ static const char *simple_lp(void) {
 
     SCS(free_data)(d, k);
     SCS(free_sol)(sol);
-    mu_assert("joe_lp: SCS failed to produce outputflag SCS_SOLVED", success);
-    return nullptr;
+
+    return make_tuple(*k, *d, *sol);
+}
+
+int size_of_vmat(int side_length) {
+    return (side_length * (side_length + 1)) / 2;
+}
+
+tuple<int, vector<int>, vector<string> > calc_n_vars(vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
+        int n, int d) {
+    int n_vars = 1; // Accounts for 'lambda'
+    vector<int> start_posns(1, 0); // Start position of 0 for lambda
+    vector<string> labels(1, "lambda");  // Label for lambda
+    int vec_posn = 1; // Leave vector position at 1 to indicate start posn of next variable to be added
+
+    // sigma_0
+    unsigned long int s_of_d = n_monomials(n, d);
+    int mat_vsize = size_of_vmat((int) s_of_d);
+    n_vars += mat_vsize;
+    start_posns.push_back(vec_posn);
+    labels.push_back("sigma_0");
+    vec_posn += mat_vsize;
+
+    // tau_j
+    int dj, side_length;
+    for (int j = 0; j < h_infos.size(); j++) {
+        dj = ceil(h_infos[j].degree / 2.0);
+        side_length = n_monomials(n, d - dj);
+        mat_vsize = size_of_vmat(side_length);
+        n_vars += mat_vsize;
+        start_posns.push_back(vec_posn);
+        labels.push_back("tau_" + to_string(j + 1));
+        vec_posn += mat_vsize;
+    }
+
+    // sigma_j
+    for (int j = 0; j < g_infos.size(); j++) {
+        dj = ceil(g_infos[j].degree / 2.0);
+        side_length = n_monomials(n, d - dj);
+        mat_vsize = size_of_vmat(side_length);
+        n_vars += mat_vsize;
+        start_posns.push_back(vec_posn);
+        labels.push_back("sigma_" + to_string(j + 1));
+        vec_posn += mat_vsize;
+    }
+
+    return make_tuple(n_vars, start_posns, labels);
 }

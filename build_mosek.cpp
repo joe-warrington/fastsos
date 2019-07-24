@@ -142,25 +142,25 @@ vector<vector<double> > &h_mono_coeffs, vector<vector<vector<int> > > &h_mono_ex
 int n, int d, unsigned long int s_of_d, Variable::t &lambda, Variable::t &sigma_0,
         vector<Variable::t> &sigma_j, vector<unsigned long int> &s_of_d_minus_djs,
         vector<Variable::t> &tau_j, vector<unsigned long int> &s_of_d_minus_dj2s,
-int output_level) {
+                                int output_level) {
 // For monomials in s(2d), find all entries (alpha, beta) for which x^(alpha+beta) = monomial.
 // For the entries of s(2d) for which there is a term in f, set RHS of constraint to the coefficient. Otherwise 0.
 
-unsigned long int s_of_2d = n_monomials(n, 2 * d);
-vector<unsigned long int> exponent_degree_start_rows(2 * d + 2, 0);
-for (int i = 1; i < 2 * d + 2; i++)
-exponent_degree_start_rows[i] = n_monomials(n, i - 1);
+    unsigned long int s_of_2d = n_monomials(n, 2 * d);
+    vector<unsigned long int> exponent_degree_start_rows(2 * d + 2, 0);
+    for (int i = 1; i < 2 * d + 2; i++)
+        exponent_degree_start_rows[i] = n_monomials(n, i - 1);
 
-int n_contributors;
-double constr_rhs;
-vector<vector <int> > all_2d_exponents = generate_all_exponents(n, 2 * d, output_level);
-vector<vector <int> > all_d_exponents = all_2d_exponents; // Technically wasteful as it duplicates the 2d list
-all_d_exponents.resize(s_of_d);  // Only retain the exponents up to degree d
-int new_mod = 0, old_mod = 0;
-auto constr_lhs = Expr::constTerm(0.0);
-vector<int> exponent_to_add(n, 0);
+    int n_contributors;
+    double constr_rhs;
+    vector<vector <int> > all_2d_exponents = generate_all_exponents(n, 2 * d, output_level);
+    vector<vector <int> > all_d_exponents = all_2d_exponents; // Technically wasteful as it duplicates the 2d list
+    all_d_exponents.resize(s_of_d);  // Only retain the exponents up to degree d
+    int new_mod = 0, old_mod = 0;
+    auto constr_lhs = Expr::constTerm(0.0);
+    vector<int> exponent_to_add(n, 0);
 //    int degree_to_add;
-bool check_this_k1;
+    bool check_this_k1;
 
 //    cout << "Eliminating unused monomials by looking for zero entries on the matrix diagonal... " << endl;
 //    vector<vector<int> > reduced_d_exponents = all_d_exponents;
@@ -213,111 +213,111 @@ bool check_this_k1;
 //        }
 //    }
 //    filtered_s_of_d = all_d_exponents.size();
-if (output_level > 0) {
-cout << "Creating the " << s_of_2d << " coefficient matching constraints... ";
-cout << flush;
-}
-for (unsigned long int i = 0; i < s_of_2d; i++){
+    if (output_level > 0) {
+        cout << "Creating the " << s_of_2d << " coefficient matching constraints... ";
+        cout << flush;
+    }
+    for (unsigned long int i = 0; i < s_of_2d; i++){
 // Print progress in percent based on fraction of i indices covered.
-old_mod = new_mod;
-new_mod = (int) (100 * i) / s_of_2d;
-if (new_mod > old_mod && output_level > 0) {
-if (new_mod > 1)
-cout << "\b\b\b\b" << setw(2) << setfill(' ') << new_mod << "% " << flush;
-else
-cout << setw(2) << setfill(' ') << new_mod << "% " << flush;
-}
+        old_mod = new_mod;
+        new_mod = (int) (100 * i) / s_of_2d;
+        if (new_mod > old_mod && output_level > 0) {
+            if (new_mod > 1)
+                cout << "\b\b\b\b" << setw(2) << setfill(' ') << new_mod << "% " << flush;
+            else
+                cout << setw(2) << setfill(' ') << new_mod << "% " << flush;
+        }
 // For each monomial represented in the sigma_0 matrix, find row, col addresses of all terms contributing
-n_contributors = 0;
-if (i == 0)
-constr_lhs = Expr::mul(1.0, lambda);  // Include lambda in the constant-term coefficient matching
-else
-constr_lhs = Expr::constTerm(0.0);
+        n_contributors = 0;
+        if (i == 0)
+            constr_lhs = Expr::mul(1.0, lambda);  // Include lambda in the constant-term coefficient matching
+        else
+            constr_lhs = Expr::constTerm(0.0);
 // Entries of sigma_0 matrix
-for (unsigned long int k1 = 0; k1 < s_of_d; k1++) {
-exponent_to_add = sub_vecs(all_2d_exponents[i], all_d_exponents[k1]);
-check_this_k1 = true;
-for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
-if (check_this_k1) {
+        for (unsigned long int k1 = 0; k1 < s_of_d; k1++) {
+            exponent_to_add = sub_vecs(all_2d_exponents[i], all_d_exponents[k1]);
+            check_this_k1 = true;
+            for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
+            if (check_this_k1) {
 //                degree_to_add = sum_vec(exponent_to_add);
 //                for (unsigned long int k2 = max(k1, exponent_degree_start_rows[degree_to_add]);
 //                     k2 < exponent_degree_start_rows[degree_to_add + 1]; k2++) {
-for (unsigned long int k2 = k1; k2 < s_of_d; k2++) {
-if (all_d_exponents[k2] == exponent_to_add) {
-n_contributors++;
-if (k1 == k2)
-constr_lhs = Expr::add(constr_lhs,
-                       Expr::mul(1.0, sigma_0->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
-else
-constr_lhs = Expr::add(constr_lhs,
-                       Expr::mul(2.0, sigma_0->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
-break;
-}
-}
-}
-}
-for (int j = 0; j < g_mono_coeffs.size(); j++) {  // for all constraint functions g_j(x)
-for (int t = 0; t < g_mono_coeffs[j].size(); t++) {  // for all terms t in g_j(x)
-for (unsigned long int k1 = 0; k1 < s_of_d_minus_djs[j]; k1++) {
-exponent_to_add = sub_vecs(all_2d_exponents[i],
-                           add_vecs(all_d_exponents[k1], g_mono_exponents[j][t]));
-check_this_k1 = true;
-for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
-if (check_this_k1) {
+                for (unsigned long int k2 = k1; k2 < s_of_d; k2++) {
+                    if (all_d_exponents[k2] == exponent_to_add) {
+                        n_contributors++;
+                        if (k1 == k2)
+                            constr_lhs = Expr::add(constr_lhs,
+                                                   Expr::mul(1.0, sigma_0->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                        else
+                            constr_lhs = Expr::add(constr_lhs,
+                                                   Expr::mul(2.0, sigma_0->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                        break;
+                    }
+                }
+            }
+        }
+        for (int j = 0; j < g_mono_coeffs.size(); j++) {  // for all constraint functions g_j(x)
+            for (int t = 0; t < g_mono_coeffs[j].size(); t++) {  // for all terms t in g_j(x)
+                for (unsigned long int k1 = 0; k1 < s_of_d_minus_djs[j]; k1++) {
+                    exponent_to_add = sub_vecs(all_2d_exponents[i],
+                                               add_vecs(all_d_exponents[k1], g_mono_exponents[j][t]));
+                    check_this_k1 = true;
+                    for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
+                    if (check_this_k1) {
 //                        degree_to_add = sum_vec(exponent_to_add);
 //                        for (unsigned long int k2 = max(k1, exponent_degree_start_rows[degree_to_add]);
 //                             k2 < min(s_of_d_minus_djs[j], exponent_degree_start_rows[degree_to_add + 1]); k2++) {
-for (unsigned long int k2 = k1; k2 < s_of_d_minus_djs[j]; k2++) {
-if (all_d_exponents[k2] == exponent_to_add) {
-if (k1 == k2)
-constr_lhs = Expr::add(constr_lhs,
-                       Expr::mul(1.0 * g_mono_coeffs[j][t],
-                                 sigma_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
-else
-constr_lhs = Expr::add(constr_lhs,
-                       Expr::mul(2.0 * g_mono_coeffs[j][t],
-                                 sigma_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
-break;
-}
-}
-}
-}
-}
-}
-for (int j = 0; j < h_mono_coeffs.size(); j++) {  // for all constraint functions g_j(x)
-for (int t = 0; t < h_mono_coeffs[j].size(); t++) {  // for all terms t in g_j(x)
-for (unsigned long int k1 = 0; k1 < s_of_d_minus_dj2s[j]; k1++) {
-exponent_to_add = sub_vecs(all_2d_exponents[i],
-                           add_vecs(all_d_exponents[k1], h_mono_exponents[j][t]));
-check_this_k1 = true;
-for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
-if (check_this_k1) {
+                        for (unsigned long int k2 = k1; k2 < s_of_d_minus_djs[j]; k2++) {
+                            if (all_d_exponents[k2] == exponent_to_add) {
+                                if (k1 == k2)
+                                    constr_lhs = Expr::add(constr_lhs,
+                                                           Expr::mul(1.0 * g_mono_coeffs[j][t],
+                                                                     sigma_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                                else
+                                    constr_lhs = Expr::add(constr_lhs,
+                                                           Expr::mul(2.0 * g_mono_coeffs[j][t],
+                                                                     sigma_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (int j = 0; j < h_mono_coeffs.size(); j++) {  // for all constraint functions g_j(x)
+            for (int t = 0; t < h_mono_coeffs[j].size(); t++) {  // for all terms t in g_j(x)
+                for (unsigned long int k1 = 0; k1 < s_of_d_minus_dj2s[j]; k1++) {
+                    exponent_to_add = sub_vecs(all_2d_exponents[i],
+                                               add_vecs(all_d_exponents[k1], h_mono_exponents[j][t]));
+                    check_this_k1 = true;
+                    for (int l = 0; l < n; l++) {if (exponent_to_add[l] < 0) check_this_k1 = false;}
+                    if (check_this_k1) {
 //                        degree_to_add = sum_vec(exponent_to_add);
 //                        for (unsigned long int k2 = max(k1, exponent_degree_start_rows[degree_to_add]);
 //                             k2 < min(s_of_d_minus_dj2s[j], exponent_degree_start_rows[degree_to_add + 1]); k2++) {
-for (unsigned long int k2 = k1; k2 < s_of_d_minus_dj2s[j]; k2++) {
-if (all_d_exponents[k2] == exponent_to_add) {
-if (k1 == k2)
-constr_lhs = Expr::add(constr_lhs,
-                       Expr::mul(1.0 * h_mono_coeffs[j][t],
-                                 tau_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
-else
-constr_lhs = Expr::add(constr_lhs,
-                       Expr::mul(2.0 * h_mono_coeffs[j][t],
-                                 tau_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
-break;
-}
-}
-}
-}
-}
-}
+                        for (unsigned long int k2 = k1; k2 < s_of_d_minus_dj2s[j]; k2++) {
+                            if (all_d_exponents[k2] == exponent_to_add) {
+                                if (k1 == k2)
+                                    constr_lhs = Expr::add(constr_lhs,
+                                                           Expr::mul(1.0 * h_mono_coeffs[j][t],
+                                                                     tau_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                                else
+                                    constr_lhs = Expr::add(constr_lhs,
+                                                           Expr::mul(2.0 * h_mono_coeffs[j][t],
+                                                                     tau_j[j]->index(new_array_ptr<int, 1>({(int) k1, (int) k2}))));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-constr_rhs = 0.0;
-for (int t = 0; t < f_mono_coeffs.size(); t++) {
-if (f_mono_exponents[t] == all_2d_exponents[i])
-constr_rhs += f_mono_coeffs[t];
-}
-M->constraint(constr_lhs, Domain::equalsTo(constr_rhs));
-}
+        constr_rhs = 0.0;
+        for (int t = 0; t < f_mono_coeffs.size(); t++) {
+            if (f_mono_exponents[t] == all_2d_exponents[i])
+                constr_rhs += f_mono_coeffs[t];
+        }
+        M->constraint(constr_lhs, Domain::equalsTo(constr_rhs));
+    }
 }

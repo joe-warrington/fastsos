@@ -6,6 +6,7 @@
 #include "fusion.h"
 #include "polystring.h"
 #include "build_mosek.h"
+#include "build_scs.h"
 #include <sys/time.h>
 #include <math.h>
 #include <vector>
@@ -425,6 +426,17 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
         solution_status_primal = M->getPrimalSolutionStatus();
         solution_status_dual = M->getDualSolutionStatus();
     } else if (strcmp(solver, "scs") == 0) {
+
+        // 4. Compute sizes of optimization variables
+        auto scs_size_data = calc_n_vars(g_infos, h_infos, n, d);
+        int scs_n_vars = get<0>(scs_size_data);
+        vector<int> scs_start_posns = get<1>(scs_size_data);
+        vector<string> scs_labels = get<2>(scs_size_data);
+        cout << "SCS problem has " << scs_n_vars << " variables:" << endl;
+        for (int j = 0; j < scs_start_posns.size(); j++)
+            cout << scs_labels[j] << "\tstarts at position " << scs_start_posns[j] << endl;
+        // 5. Create SCS model, including cone constraint dimensions and types, but without populating the A matrix or b
+
         cout << "Solver SCS not implemented." << endl;
     }
     return make_tuple(obj_val, problem_status, solution_status_primal, solution_status_dual);
