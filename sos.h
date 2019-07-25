@@ -36,6 +36,5 @@ vector<vector <int> > generate_all_exponents(int n, int d, int output_level);
 
 int compute_legal_d(PolyInfo f_info, vector<PolyInfo> g_infos, vector<PolyInfo> h_infos, int d_request);
 
-tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
-        string& f_string, vector<string>& g_strings, vector<string>& h_strings,
-        int d_request, string& positivity_condition, int output_level);
+tuple<double, int, string> sos_level_d(string& f_string, vector<string>& g_strings, vector<string>& h_strings,
+                               int d_request, string& positivity_condition, int output_level, string solver_choice);

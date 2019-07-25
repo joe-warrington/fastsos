@@ -44,8 +44,11 @@ int main(int argc, char * argv[]) {
     vector<string> eq_constr_strings = get<2>(problem_tuple);
     bool read_success = get<3>(problem_tuple);
 
+    string solver_choice = "mosek";
+
     if (read_success) {
-        auto sol_info = sos_level_d(obj_string, ineq_constr_strings, eq_constr_strings, d, positivity_condition, 1);
+        auto sol_info = sos_level_d(obj_string, ineq_constr_strings, eq_constr_strings, d, positivity_condition, 1,
+                solver_choice);
         return 0;
     }
     else {

@@ -4,12 +4,13 @@
 #include <iomanip>
 #include "mosek.h"
 #include "fusion.h"
-#include "scs.h"
-#include "glbopts.h"
-#include "minunit.h"
-#include "problem_utils.h"
+
 #include "scs.h"
 #include "util.h"
+#include "linalg.h"
+#include "amatrix.h"
+#include "cones.h"
+
 
 #include "polystring.h"
 #include "build_mosek.h"
@@ -271,16 +272,13 @@ int compute_legal_d(PolyInfo f_info, vector<PolyInfo> g_infos, vector<PolyInfo> 
     return max(d_min, d_request);
 }
 
-tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
+tuple<double, int, string> sos_level_d(
         string& f_string, vector<string>& g_strings, vector<string>& h_strings,
-        int d_request, string& positivity_condition, int output_level) {
-
-    string solver = "scs";
+        int d_request, string& positivity_condition, int output_level, string solver) {
 
     double obj_val = 0.0;
-    ProblemStatus problem_status;
-    SolutionStatus solution_status_primal;
-    SolutionStatus solution_status_dual;
+    int sol_status = 0;
+    string sol_status_string = "";
 
     // 0. State objective and constraints as strings read from file
     int m = g_strings.size();
@@ -314,7 +312,7 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
 
     if (f_info.degree == 0) {
         cout << "Cannot minimize a constant." << endl;
-        return make_tuple(obj_val, problem_status, solution_status_primal, solution_status_dual);
+        return make_tuple(obj_val, sol_status, sol_status_string);
     }
     vector<double> f_mono_coeffs(f_info.n_terms, 0.0); // List of monomial coefficients
     vector<vector<int> > f_mono_exponents(f_info.n_terms, vector<int>(f_info.dimension, 0));
@@ -362,6 +360,7 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
     unsigned long int s_of_d = n_monomials(n, d);
 
     if (solver == "mosek") {
+
         // 4. Create Mosek model and data entries of correct dimensions
         timestamp_t t1, t2;
         if (output_level > 0)
@@ -417,21 +416,21 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
                     print_vec("tau_" + to_string(j + 1), (*sol_tau_j));
             }
             obj_val = M->primalObjValue();
+            sol_status = 1;
         }
         catch (mosek::fusion::SolutionError &e) {
             cout << color_yellow << " Didn't solve!\n  " << e.toString() << color_reset << endl;
+            sol_status = -1;
         }
         catch (ParameterError &e) {
             cout << color_red << " Parameter error!\n  " << e.toString() << color_reset << endl;
+            sol_status = -1;
         }
         catch (const exception &e) {
             cout << color_red << " Generic exception:\n  " << e.what() << color_reset << endl;
+            sol_status = -1;
         }
 
-
-        problem_status = M->getProblemStatus();
-        solution_status_primal = M->getPrimalSolutionStatus();
-        solution_status_dual = M->getDualSolutionStatus();
     } else if (solver == "scs") {
         timestamp_t t1, t2;
         // 4. Compute sizes of optimization variables
@@ -442,58 +441,97 @@ tuple<double, ProblemStatus, SolutionStatus, SolutionStatus> sos_level_d(
         cout << "SCS problem has " << scs_n_vars << " variables:" << endl;
         for (int j = 0; j < scs_start_posns.size(); j++)
             cout << scs_labels[j] << "\tstarts at position " << scs_start_posns[j] << endl;
-        // 5. Create SCS model, including cone constraint dimensions and types, but without populating the A matrix or b
 
-        tuple<ScsCone, ScsData, ScsSolution, ScsInfo> M = create_scs_model(f_info, g_infos, h_infos, n, d, scs_n_vars, positivity_condition);
+        // 5. Create SCS model, including cone constraint dimensions and types, but without populating the A matrix or b
+        tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M = create_scs_model(
+                                                     f_info, g_infos, h_infos, n, d, scs_n_vars, positivity_condition);
 
         // 5. Populate SCS model from input data
         t1 = timenow();
+        if (output_level > 0)
+            cout << "Creating coefficient matches... ";
+        vector<unsigned long int> scs_psd_side_lengths(1, s_of_d);
         vector<unsigned long int> s_of_d_minus_djs;
         vector<unsigned long int> s_of_d_minus_dj2s;
-        for (int j = 0; j < g_infos.size(); j++)
+        for (int j = 0; j < g_infos.size(); j++) {
             s_of_d_minus_djs.push_back(n_monomials(n, d - ceil(g_infos[j].degree / 2.0)));
-        for (int j = 0; j < h_infos.size(); j++)
+            scs_psd_side_lengths.push_back(s_of_d_minus_djs[j]);
+        }
+        for (int j = 0; j < h_infos.size(); j++) {
             s_of_d_minus_dj2s.push_back(n_monomials(n, d - ceil(h_infos[j].degree / 2.0)));
+            scs_psd_side_lengths.push_back(s_of_d_minus_dj2s[j]);
+        }
         create_scs_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
                                    h_mono_coeffs, h_mono_exponents, n, d, s_of_d,
                                    s_of_d_minus_djs, s_of_d_minus_dj2s, output_level);
         t2 = timenow();
         if (output_level > 0)
-            cout << "\b\b\b\b done in " << time_string(t2 - t1) << "." << endl;
+            cout << "Done in " << time_string(t2 - t1) << "." << endl;
 
         scs_int exitflag;
         scs_int success;
 
         // Solve LP
-        ScsCone k = get<0>(M);
-        ScsData d = get<1>(M);
-        ScsSolution sol = get<2>(M);
+        ScsCone *k = get<0>(M);
+        ScsData *d = get<1>(M);
+        ScsSolution *sol = get<2>(M);
         ScsInfo info = get<3>(M);
+
+        // Because matrix side lengths are stored as pointers, pointer must be defined in same scope as model used.
+//        scs_int *scs_psd_side_lengths_array = new scs_int(scs_psd_side_lengths.size());
+//        copy(scs_psd_side_lengths.begin(), scs_psd_side_lengths.end(), scs_psd_side_lengths_array);
+//        k->s = scs_psd_side_lengths_array;
+
+        // Solve semidefinite program
         exitflag = scs(d, k, sol, &info);
 
         // Collect results
         success = exitflag == SCS_SOLVED;
+        if (success) {
 
-        cout << "x* = [";
-        for (int i = 0; i < n; i++)
-            cout << sol.x[i] << " ";
-        cout << "\b]" << endl;
-        cout << "y* = [";
-        for (int i = 0; i < m; i++)
-            cout << sol.y[i] << " ";
-        cout << "\b]" << endl;
-        cout << "s* = [";
-        for (int i = 0; i < m; i++)
-            cout << sol.s[i] << " ";
-        cout << "\b]" << endl;
+            obj_val = (double) (-1.0 * info.pobj);  // -1 is because we are doing (-min (-obj)) for maximization
 
+            cout << "Optimal value: " << obj_val << endl;
+
+            cout << "Info:\n";
+            cout << "  iter: " << info.iter << endl;
+            cout << "  status: " << info.status << endl;
+            cout << "  status_val: " << info.status_val << endl;
+            cout << "  pobj: " << info.pobj << endl;
+            cout << "  dobj: " << info.dobj << endl;
+            cout << "  res_pri: " << info.res_pri << endl;
+            cout << "  res_dual: " << info.res_dual << endl;
+            cout << "  res_infeas: " << info.res_infeas << endl;
+            cout << "  res_unbdd: " << info.res_unbdd << endl;
+            cout << "  rel_gap: " << info.rel_gap << endl;
+            cout << "  setup_time: " << info.setup_time << endl;
+            cout << "  solve_time: " << info.solve_time << endl;
+
+//            cout << "x* = [";
+//            for (int i = 0; i < d->n; i++)
+//                cout << sol->x[i] << " ";
+//            cout << "\b]" << endl;
+//            cout << "y* = [";
+//            for (int i = 0; i < d->m; i++)
+//                cout << sol->y[i] << " ";
+//            cout << "\b]" << endl;
+//            cout << "s* = [";
+//            for (int i = 0; i < d->m; i++)
+//                cout << sol->s[i] << " ";
+//            cout << "\b]" << endl;
+        }
+
+        sol_status = info.status_val;
+        sol_status_string = string(info.status);
+
+        // Free up memory allocated to model and solution
         SCS(free_data)(d, k);
         SCS(free_sol)(sol);
 
-        cout << "Solver SCS not fully implemented." << endl;
+        cout << "WARNING: Solver SCS not yet implemented for constrained programs or non-PSD positivity conditions." << endl;
     } else {
         cout << "Unrecognized solver choice: " << solver << endl;
     }
 
-    return make_tuple(obj_val, problem_status, solution_status_primal, solution_status_dual);
+    return make_tuple(obj_val, sol_status, sol_status_string);
 }

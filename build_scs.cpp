@@ -7,19 +7,20 @@
 #include <tuple>
 #include <vector>
 #include "polystring.h"
-#include "sos.h"
+
 #include "glbopts.h"
-#include "minunit.h"
 #include "problem_utils.h"
 #include "scs.h"
 #include "util.h"
+
+#include "sos.h"
 
 #include "build_scs.h"
 
 
 using namespace std;
 
-tuple<ScsCone, ScsData, ScsSolution, ScsInfo> create_scs_model(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
+tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> create_scs_model(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
                       int dim, int deg, int total_vars, string positivity_condition) {
     ScsCone *k = (ScsCone *) scs_calloc(1, sizeof(ScsCone));
     ScsData *d = (ScsData *) scs_calloc(1, sizeof(ScsData));
@@ -28,16 +29,26 @@ tuple<ScsCone, ScsData, ScsSolution, ScsInfo> create_scs_model(PolyInfo& f_info,
 
     // Define problem dimensions
     int s_of_2d = (int) n_monomials(dim, 2 * deg);
-    vector<int> psd_constr_heights(0, 0);
-    int psd_constr_rows = 0;
+    int s_of_d = (int) n_monomials(dim, deg);
+    int psd_constr_rows = size_of_vmat(n_monomials(dim, deg));  // Number of elements in vectorized sigma_0 matrix
+    vector<int> psd_side_lengths;
+    vector<int> psd_constr_heights;
+    psd_side_lengths.push_back(s_of_d);
+    psd_constr_heights.push_back(psd_constr_rows);
     int n_g = g_infos.size();
+    cout << "n_g = " << n_g << "\n";
     for (int j = 0; j < n_g; j++) {
+        psd_side_lengths.push_back(n_monomials(dim, ceil(dim - g_infos[j].degree / 2.0)));
         psd_constr_heights.push_back(size_of_vmat(n_monomials(dim, ceil(dim - g_infos[j].degree / 2.0))));
-        psd_constr_rows += psd_constr_heights[j];
+        psd_constr_rows += psd_constr_heights[j + 1];
     }
+    cout << "psd_constr_rows = " << psd_constr_rows << "\n";
 
-    scs_int n = total_vars; // Length of optimization vector x
-    scs_int m = s_of_2d + psd_constr_rows; // Number of equality constraints in Ax + s = b
+    scs_int n = (scs_int) total_vars; // Length of optimization vector x
+    scs_int m = (scs_int) (s_of_2d + psd_constr_rows); // Number of equality constraints in Ax + s = b
+
+    cout << "SCS model has n = " << n << " variables (cols) and " << s_of_2d << " + " << psd_constr_rows
+            << " = " << m << " constraints (rows)." << endl;
 
     d->stgs = (ScsSettings *) scs_calloc(1, sizeof(ScsSettings));
     d->m = m;
@@ -46,11 +57,24 @@ tuple<ScsCone, ScsData, ScsSolution, ScsInfo> create_scs_model(PolyInfo& f_info,
 
     if (positivity_condition == "PSD") {
         // Create mixture of zero, free, and PSD cone variables
-        k->f = s_of_2d;
-        k->ssize = n_g;
-        int psd_constr_heights_array[psd_constr_heights.size()];
-        copy(psd_constr_heights.begin(), psd_constr_heights.end(), psd_constr_heights_array);
-        k->s = psd_constr_heights_array;
+        k->f = (scs_int) s_of_2d;
+        cout << "  k->f = " << k->f << ", ";
+        k->ssize = (scs_int) (n_g + 1);
+        cout << "k->ssize = " << k->ssize << ", k->s = {";
+        scs_int *psd_side_lengths_array = new scs_int(psd_side_lengths.size());  // Allocate memory for s array
+        copy(psd_side_lengths.begin(), psd_side_lengths.end(), psd_side_lengths_array);
+        k->s = psd_side_lengths_array;
+        for (int j = 0; j < n_g + 1; j++) {
+            cout << k->s[j] << ", ";
+        }
+        cout << "\b\b}" << endl;
+        k->l = 0;
+        k->q = SCS_NULL;
+        k->qsize = 0;
+        k->ep = 0;
+        k->ed = 0;
+        k->p = SCS_NULL;
+        k->psize = 0;
     } else {
         cout << "PSD is the only positivity condition implemented with SCS." << endl;
     }
@@ -69,41 +93,21 @@ tuple<ScsCone, ScsData, ScsSolution, ScsInfo> create_scs_model(PolyInfo& f_info,
     A->n = d->n;
     A->m = d->m;
 
-    // Populate cost function and constraint data
-    b[0] = 0.0;
-    b[1] = 0.0;
-    b[2] = 2.4;
-
-    A->p[0] = 0;
-    A->p[1] = 2;
-    A->p[2] = 4;
-    A->i[0] = 0;
-    A->i[1] = 2;
-    A->i[2] = 1;
-    A->i[3] = 2;
-    A->x[0] = -1.0;
-    A->x[1] = 1.0;
-    A->x[2] = -1.0;
-    A->x[3] = 1.0;
-
-
-    return make_tuple(*k, *d, *sol, info);
+    return make_tuple(k, d, sol, info);
 }
 
-void create_scs_coeff_matches(tuple<ScsCone, ScsData, ScsSolution> &M,
+void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M,
                                 vector<double> &f_mono_coeffs, vector<vector<int> > &f_mono_exponents,
                                 vector<vector<double> > &g_mono_coeffs, vector<vector<vector<int> > > &g_mono_exponents,
                                 vector<vector<double> > &h_mono_coeffs, vector<vector<vector<int> > > &h_mono_exponents,
                                 int dim, int deg, unsigned long int s_of_d, vector<unsigned long int> &s_of_d_minus_djs,
                                 vector<unsigned long int> &s_of_d_minus_dj2s, int output_level) {
 
-    ScsCone k = get<0>(M);
-    ScsData d = get<1>(M);
-    ScsSolution sol = get<2>(M);
+    ScsData *d = get<1>(M);
 
-    ScsMatrix *A = d.A;
-    scs_float *b = d.b;
-    scs_float *c = d.c;
+    ScsMatrix *A = d->A;
+    scs_float *b = d->b;
+    scs_float *c = d->c;
 
     int nnz_counter = 0;
     // Update coefficients relating to lambda
@@ -111,19 +115,63 @@ void create_scs_coeff_matches(tuple<ScsCone, ScsData, ScsSolution> &M,
     A->p[0] = 0; // Zeroth column starts at position 0
     A->i[0] = 0; // lambda appears in first column, in first position
     A->x[0] = 1.0; // lambda coefficient is 1 as we have "f - lambda = 0" when matching the coefficient of constants
-    nnz_counter += 1; // update nnz_counter so that p[1] can be
+    nnz_counter += 1; // update nnz_counter so that p[1] can be set correctly in the same manner as all later p[i]
 
     int s_of_2d = n_monomials(dim, deg * 2);
     vector<vector<int> > exp_list_2d = generate_all_exponents(dim, 2 * deg, 0);
+    unsigned long int idx;
+
+    // Add entries for sigma_0
+    int sigma_0_len = size_of_vmat(s_of_d);
+    int k1 = -1, k2 = 0;
+    vector<int> k1k2_exponent;
+    for (int i = 0; i < sigma_0_len; i++) {  // Work left to right across A matrix
+        A->p[i+1] = nnz_counter; cout << "A->p[" << i + 1 << "] = " << nnz_counter << endl;
+        k1++; // k1 starts at -1 before this loop, so that the first iteration yields k1 = 0.
+        if (k1 == s_of_d) {
+            k2++; // Increment row and column
+            k1 = k2; // Set k1 to point to the diagonal entry of the matrix in column k2
+        }
+        // Add an entry for the coefficient matching
+        k1k2_exponent = add_vecs(exp_list_2d[k1], exp_list_2d[k2]);
+        auto it = find(exp_list_2d.begin(), exp_list_2d.end(), k1k2_exponent);
+        if (it != exp_list_2d.end()) {
+            idx = distance(exp_list_2d.begin(), it);
+            A->i[nnz_counter] = idx; cout << "A->i[" << nnz_counter << "] = " << A->i[nnz_counter] << endl;
+            if (k1 == 2)
+                A->x[nnz_counter] = 1.0;
+            else
+                A->x[nnz_counter] = sqrt(2);  // SCS stores the matrix with off-diagonals already scaled by sqrt(2)
+            cout << "A->x[" << nnz_counter << "] = " << A->x[nnz_counter] << endl;
+            nnz_counter++;
+        } else {cout << "WARNING: Coefficient match not found!\n";}
+        // Add an entry to bind the element of sigma_0 to the PSD cone
+        A->i[nnz_counter] = s_of_2d + i; cout << "A->i[" << nnz_counter << "] = " << A->i[nnz_counter] << endl;
+        A->x[nnz_counter] = -1.0; cout << "A->x[" << nnz_counter << "] = " << A->x[nnz_counter] << endl;
+        nnz_counter++;
+    }
+    A->p[sigma_0_len + 1] = nnz_counter; cout << "A->p[" << sigma_0_len + 1 << "] = " << nnz_counter << endl;
+
+    // Loop through any g constraints present to populate constraints on corresponding sigma_j matrices
+    int n_g = g_mono_coeffs.size();
+    for (int j = 0; j < n_g; j++) {
+        // Don't do anything yet, because g constraints not accounted for in memory allocated to A
+    }
+    // Loop through any h constraints present to populate constraints on corresponding tau_j matrices
+    int n_h = h_mono_coeffs.size();
+    for (int j = 0; j < n_h; j++) {
+        // Don't do anything yet, because h constraints not accounted for in memory allocated to A
+    }
+
 
     // Update RHS of equality constraint for coefficients of monomials in f
-    unsigned long int idx;
+
     for (int t = 0; t < f_mono_coeffs.size(); t++) {
         auto it = find(exp_list_2d.begin(), exp_list_2d.end(), f_mono_exponents[t]);
         if (it != exp_list_2d.end()) {
             idx = distance(exp_list_2d.begin(), it);
-            cout << "Found index in exponent list for the following term of objective f(x): ";
-            print_vec("", f_mono_exponents[t]);
+//            cout << "Found index in exponent list for the following term of objective f(x): ";
+//            print_vec("", f_mono_exponents[t]);
             b[idx] += f_mono_coeffs[t];
         }
     }
@@ -134,8 +182,10 @@ void create_scs_coeff_matches(tuple<ScsCone, ScsData, ScsSolution> &M,
 int compute_scs_nonzeros(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
         int dim, int deg, vector<vector<int> > exp_list_2d) {
 
+    int nnz = 1;  // Accounts for the 1 in the (0, 0) entry of A, corresponding to lambda
+
     unsigned long int s_of_d = n_monomials(dim, deg);
-    int nnz = (s_of_d * (s_of_d + 1)) / 2; // Elements constraining sigma_0 to PSD cone.
+    nnz += (s_of_d * (s_of_d + 1)) / 2; // Elements constraining sigma_0 to PSD cone.
 
     vector<unsigned long int> s_of_d_minus_djs;
     vector<unsigned long int> s_of_d_minus_dj2s;
