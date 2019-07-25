@@ -10,7 +10,7 @@ tuple<bool, bool, bool, PolyInfo, vector<double>, vector<vector<int> >> test_pol
 
 tuple<int, int> run_polynomial_parser_tests();
 
-tuple<bool, bool, double> test_sos_program(
+tuple<bool, bool, double, int> test_sos_program(
         string& obj_in, vector<string> ineq_constrs_in, vector<string> eq_constrs_in, int d_in, string pos_cert_in,
         tuple<int, double, double, bool> expected_result_in, string solver_choice);
 

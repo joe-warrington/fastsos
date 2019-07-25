@@ -1,6 +1,4 @@
-//
-// Created by Joe Warrington on 2019-07-23.
-//
+// (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
 #ifndef FASTSOS_BUILD_SCS_H
 #define FASTSOS_BUILD_SCS_H
@@ -10,6 +8,7 @@
 int size_of_vmat(int side_length);
 
 tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> create_scs_model(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
+                                                      vector<vector<vector<int> > > &g_mono_exponents, vector<vector<vector<int> > > &h_mono_exponents,
                                                       int dim, int deg, int total_vars, string positivity_condition);
 
 void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M,
@@ -22,4 +21,5 @@ void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo
 tuple<int, vector<int>, vector<string> > calc_n_vars(vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos, int n, int d);
 
 int compute_scs_nonzeros(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
-        int dim, int deg, vector<vector<int> > exp_list_2d);
+                         vector<vector<vector<int> > > & g_mono_exponents, vector<vector<vector<int> > > & h_mono_exponents,
+                         int dim, int deg, vector<vector<int> > exp_list_2d);

@@ -137,7 +137,7 @@ tuple<int, int> run_polynomial_parser_tests() {
     return make_tuple(test_count - fail_count, test_count);
 }
 
-tuple<bool, bool, double> test_sos_program(
+tuple<bool, bool, double, int> test_sos_program(
         string& obj_in, vector<string> ineq_constrs_in, vector<string> eq_constrs_in, int d_in, string pos_cert_in,
         tuple<int, double, double, bool> expected_result_in, string solver_choice) {
 
@@ -160,11 +160,16 @@ tuple<bool, bool, double> test_sos_program(
 
     bool sol_status_correct = sol_status == expected_sol_status;
 
-    if (sol_status == 1) {
+    if (sol_status == 1 || sol_status == 2) {
         report_obj_value = true;
         if (abs(obj_val - expected_obj_val) <= expected_tolerance) {
             obj_val_correct = true;
         }
+    }
+
+    if (expected_sol_status != 1) {
+        obj_val_correct = true;
+        report_obj_value = false;
     }
 
     if (expected_num_problems) {
@@ -176,7 +181,7 @@ tuple<bool, bool, double> test_sos_program(
     if (report_obj_value) cout << "Objective value:\t" << obj_val << endl;
     cout << "Solution status:\t\t" << sol_status << " - " << sol_status_string << endl;
 
-    return make_tuple(obj_val_correct, sol_status_correct, obj_val);
+    return make_tuple(obj_val_correct, sol_status_correct, obj_val, sol_status);
 }
 
 tuple<int, int> run_sos_program_tests(string solver_choice) {
@@ -204,7 +209,7 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
                                                  "x4^2 - x4", "x5^2 - x5", "x6^2 - x6", "x7^2 - x7", "x8^2 - x8"},
                                                 {"x1 - x3 - 2x4 - 4x5", "x2 - x6 - 2x7 - 4x8", "x3^2 - x3",
                                                         "x4^2 - x4", "x5^2 - x5", "x6^2 - x6", "x7^2 - x7", "x8^2 - x8"}};
-    vector<int> relaxation_degree = {3,
+    vector<int> relaxation_degree = {1,
                                      2,
                                      2,
                                      2,
@@ -218,9 +223,9 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
                                        "PSD",
                                        "PSD",
                                        "PSD"};
-    vector<int> sol_statuses = {1,
-                                1,
-                                1,
+    vector<int> sol_statuses = {1, // optimal solution found
+                                -1, // unbounded
+                                -2, // infeasible
                                 1,
                                 1,
                                 1,
@@ -252,10 +257,9 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
     int test_count = 0;
     int fail_count = 0;
     tuple<int, double, double, bool> expected_result;
-    tuple<bool, bool, double> test_output;
+    tuple<bool, bool, double, int> test_output; // Objective value correct, solver status correct, objective value
 
     for (int i = 0; i < n_tests; i++) {
-//    for (int i = 0; i < 1; i++) {
         test_count++;
         string problem_string = "min " + input_objs[i];
         if (!input_ineq_constrs[i].empty() || !input_eq_constrs[i].empty()) problem_string += "   s.t.  ";
@@ -271,12 +275,12 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
 
         if (!get<0>(test_output) || !get<1>(test_output)) {
             cout << color_red << "FAIL: ";
-            if (!get<0>(test_output)) {
+            if (!get<0>(test_output) && (get<3>(test_output) == 1 || get<3>(test_output) == 2)) {
                 cout << "Objective value is incorrect: " << get<2>(test_output) << " instead of "
                         << opt_values[i] << " +- " << sol_tols[i] << endl;
             }
             if (!get<1>(test_output)) {
-                cout << "Overall solution status is incorrect." << endl;
+                cout << "Overall solution status is incorrect: " << get<3>(test_output) << " instead of " << sol_statuses[i] << endl;
             }
             fail_count++;
             cout << color_reset << "\n";
@@ -296,13 +300,16 @@ void run_tests() {
     cout << "Running in test mode...\n";
     cout << "--------------------------------------------------------------\n\n";
 
-    tuple<int, int> parse_results, program_results;
+    tuple<int, int> parse_results, program_results_scs, program_results_mosek;
     parse_results = run_polynomial_parser_tests();
 
     string solver_choice = "scs";
-    program_results = run_sos_program_tests(solver_choice);
+    program_results_scs = run_sos_program_tests(solver_choice);
+    solver_choice = "mosek";
+    program_results_mosek = run_sos_program_tests(solver_choice);
 
     cout << "Test summary:\t" << get<0>(parse_results) << "/" << get<1>(parse_results) << " parsing tests passed.\n";
-    cout << "\t\t" << get<0>(program_results) << "/" << get<1>(program_results) << " SOS programming tests passed.\n";
+    cout << "\t\t" << get<0>(program_results_scs) << "/" << get<1>(program_results_scs) << " SOS programming tests passed with SCS.\n";
+    cout << "\t\t" << get<0>(program_results_mosek) << "/" << get<1>(program_results_mosek) << " SOS programming tests passed with MOSEK.\n";
     cout << "--------------------------------------------------------------\n";
 }

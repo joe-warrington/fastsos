@@ -278,6 +278,7 @@ tuple<double, int, string> sos_level_d(
 
     double obj_val = 0.0;
     int sol_status = 0;
+    int solver_specific_status = 0;
     string sol_status_string = "";
 
     // 0. State objective and constraints as strings read from file
@@ -438,13 +439,13 @@ tuple<double, int, string> sos_level_d(
         int scs_n_vars = get<0>(scs_size_data);
         vector<int> scs_start_posns = get<1>(scs_size_data);
         vector<string> scs_labels = get<2>(scs_size_data);
-        cout << "SCS problem has " << scs_n_vars << " variables:" << endl;
-        for (int j = 0; j < scs_start_posns.size(); j++)
-            cout << scs_labels[j] << "\tstarts at position " << scs_start_posns[j] << endl;
+//        cout << "SCS problem has " << scs_n_vars << " variables:" << endl;
+//        for (int j = 0; j < scs_start_posns.size(); j++)
+//            cout << scs_labels[j] << "\tstarts at position " << scs_start_posns[j] << endl;
 
         // 5. Create SCS model, including cone constraint dimensions and types, but without populating the A matrix or b
         tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M = create_scs_model(
-                                                     f_info, g_infos, h_infos, n, d, scs_n_vars, positivity_condition);
+            f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents, n, d, scs_n_vars, positivity_condition);
 
         // 5. Populate SCS model from input data
         t1 = timenow();
@@ -471,7 +472,7 @@ tuple<double, int, string> sos_level_d(
         scs_int exitflag;
         scs_int success;
 
-        // Solve LP
+        // Solve SDP
         ScsCone *k = get<0>(M);
         ScsData *d = get<1>(M);
         ScsSolution *sol = get<2>(M);
@@ -486,26 +487,11 @@ tuple<double, int, string> sos_level_d(
         exitflag = scs(d, k, sol, &info);
 
         // Collect results
-        success = exitflag == SCS_SOLVED;
+        success = exitflag == SCS_SOLVED || exitflag == SCS_SOLVED_INACCURATE;
         if (success) {
 
             obj_val = (double) (-1.0 * info.pobj);  // -1 is because we are doing (-min (-obj)) for maximization
-
             cout << "Optimal value: " << obj_val << endl;
-
-            cout << "Info:\n";
-            cout << "  iter: " << info.iter << endl;
-            cout << "  status: " << info.status << endl;
-            cout << "  status_val: " << info.status_val << endl;
-            cout << "  pobj: " << info.pobj << endl;
-            cout << "  dobj: " << info.dobj << endl;
-            cout << "  res_pri: " << info.res_pri << endl;
-            cout << "  res_dual: " << info.res_dual << endl;
-            cout << "  res_infeas: " << info.res_infeas << endl;
-            cout << "  res_unbdd: " << info.res_unbdd << endl;
-            cout << "  rel_gap: " << info.rel_gap << endl;
-            cout << "  setup_time: " << info.setup_time << endl;
-            cout << "  solve_time: " << info.solve_time << endl;
 
 //            cout << "x* = [";
 //            for (int i = 0; i < d->n; i++)
@@ -521,14 +507,36 @@ tuple<double, int, string> sos_level_d(
 //            cout << "\b]" << endl;
         }
 
-        sol_status = info.status_val;
+        cout << "Info:\n";
+        cout << "  iter: " << info.iter << endl;
+        cout << "  status: " << info.status << endl;
+        cout << "  status_val: " << info.status_val << endl;
+        cout << "  pobj: " << info.pobj << endl;
+        cout << "  dobj: " << info.dobj << endl;
+        cout << "  res_pri: " << info.res_pri << endl;
+        cout << "  res_dual: " << info.res_dual << endl;
+        cout << "  res_infeas: " << info.res_infeas << endl;
+        cout << "  res_unbdd: " << info.res_unbdd << endl;
+        cout << "  rel_gap: " << info.rel_gap << endl;
+        cout << "  setup_time: " << info.setup_time << endl;
+        cout << "  solve_time: " << info.solve_time << endl;
+
+        solver_specific_status = info.status_val;
         sol_status_string = string(info.status);
+
+        if (solver_specific_status == -1) { // SCS reports "unbounded"
+            sol_status = -2; // Return infeasible, as SCS solves a min instead of a max
+            sol_status_string = "Infeasible";
+        } else if (solver_specific_status == -2) { // SCS reports "infeasible"
+            sol_status = -1; // Return unbounded, as SCS solves a min instead of a max
+            sol_status_string = "Unbounded";
+        } else {
+            sol_status = solver_specific_status;
+        }
 
         // Free up memory allocated to model and solution
         SCS(free_data)(d, k);
         SCS(free_sol)(sol);
-
-        cout << "WARNING: Solver SCS not yet implemented for constrained programs or non-PSD positivity conditions." << endl;
     } else {
         cout << "Unrecognized solver choice: " << solver << endl;
     }
