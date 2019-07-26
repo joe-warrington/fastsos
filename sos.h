@@ -9,8 +9,6 @@ using namespace mosek::fusion;
 
 #endif //FASTSOS_SOS_H
 
-string time_string(unsigned long long us_in);
-
 unsigned long int a_choose_b(int a, int b);
 
 unsigned long int n_monomials(int n, int d);

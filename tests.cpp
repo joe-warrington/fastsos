@@ -144,7 +144,10 @@ tuple<bool, bool, double, int> test_sos_program(
     bool obj_val_correct = false;
 
     // Solve SOS problem
-    auto sol_info = sos_level_d(obj_in, ineq_constrs_in, eq_constrs_in, d_in, pos_cert_in, 1, solver_choice);
+
+    int testing_output_level = 1;  // Controls level of text output during tests
+
+    auto sol_info = sos_level_d(obj_in, ineq_constrs_in, eq_constrs_in, d_in, pos_cert_in, testing_output_level, solver_choice);
 
     // Collect result and check against expected behaviour
     double obj_val = get<0>(sol_info);

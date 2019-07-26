@@ -5,17 +5,17 @@
 #include "mosek.h"
 #include "fusion.h"
 
+#include "timing.h"
 #include "scs.h"
 #include "util.h"
 #include "linalg.h"
 #include "amatrix.h"
 #include "cones.h"
 
-
 #include "polystring.h"
 #include "build_mosek.h"
 #include "build_scs.h"
-#include <sys/time.h>
+
 #include <math.h>
 #include <vector>
 #include <tuple>
@@ -29,32 +29,7 @@ const string color_yellow("\033[1;33m");
 const string color_green("\033[1;32m");
 const string color_reset("\033[0m");
 
-typedef unsigned long long timestamp_t;
-static timestamp_t timenow() {
-    struct timeval now;
-    gettimeofday (&now, NULL);
-    return  now.tv_usec + (timestamp_t)now.tv_sec * 1000000;
-}
 
-string time_string(unsigned long long us_in) {
-    ostringstream time_string_stream;     // Create an output string stream
-    time_string_stream << std::fixed;    // Set Fixed -Point Notation
-    time_string_stream << std::setprecision(3);    // Set precision to 2 digits
-
-//    if (log10((double) us_in) < 3) {
-//        time_string_stream << us_in;
-//        return time_string_stream.str() + " us";
-//    }
-//    else
-    if (log10((double) us_in) >= 6) {
-        time_string_stream << us_in / 1000000.0;
-        return time_string_stream.str() + " s";
-    }
-    else {
-        time_string_stream << us_in / 1000.0;
-        return time_string_stream.str() + " ms";
-    }
-}
 
 unsigned long int a_choose_b(int a, int b){
     // Formula for a-choose-b is a!/[b!(a-b)!]
@@ -363,9 +338,13 @@ tuple<double, int, string> sos_level_d(
     if (solver == "mosek") {
 
         // 4. Create Mosek model and data entries of correct dimensions
-        timestamp_t t1, t2;
-        if (output_level > 0)
+        timestamp_t t1, t2, t3, t4;
+        if (output_level > 0) {
             cout << "Creating MOSEK variables and " << positivity_condition << " positivity constraints... " << flush;
+        }
+        else {
+            cout << "Building..." << flush;
+        }
         t1 = timenow();
         auto tuple_out = create_mosek_model(f_info, g_infos, h_infos, n, d, s_of_d, positivity_condition);
         Model::t M = get<0>(tuple_out);
@@ -384,13 +363,17 @@ tuple<double, int, string> sos_level_d(
             cout << "\b\b." << endl;
         }
         // 5. Populate Mosek model from input data
-        t1 = timenow();
+        t3 = timenow();
         create_mosek_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
                                    h_mono_coeffs, h_mono_exponents, n, d, s_of_d,
                                    lambda, sigma_0, sigma_j, s_of_d_minus_djs, tau_j, s_of_d_minus_dj2s, output_level);
-        t2 = timenow();
-        if (output_level > 0)
-            cout << "\b\b\b\b done in " << time_string(t2 - t1) << "." << endl;
+        t4 = timenow();
+        if (output_level > 0) {
+            cout << "\b\b\b\b done in " << time_string(t4 - t3) << "." << endl;
+        }
+        else {
+            cout << " finished working in " << time_string(t4 - t1) << "." << endl;
+        }
 
         // 6. Solve and collect optimality information
         cout << "Solving..." << flush;
@@ -399,7 +382,7 @@ tuple<double, int, string> sos_level_d(
             M->solve();
             t2 = timenow();
             //Extract solution
-            cout << " finished working in " << time_string(t2 - t1) << "." << endl;
+            cout << "  finished working in " << time_string(t2 - t1) << "." << endl;
             auto sol_lambda = lambda->level();
             cout << color_green << "  Lower bound for d = " << d << ": " << (*sol_lambda) << color_reset << endl;
             auto sol_sigma_0 = sigma_0->level();
@@ -433,41 +416,52 @@ tuple<double, int, string> sos_level_d(
         }
 
     } else if (solver == "scs") {
-        timestamp_t t1, t2;
+        timestamp_t t1, t2, t3, t4, t5, t6, t7, t8;
         // 4. Compute sizes of optimization variables
+        t1 = timenow();
+        if (output_level > 0)
+            cout << "Computing number of variables..." << flush;
+        else
+            cout << "Building..." << flush;
         auto scs_size_data = calc_n_vars(g_infos, h_infos, n, d);
         int scs_n_vars = get<0>(scs_size_data);
         vector<int> scs_start_posns = get<1>(scs_size_data);
         vector<string> scs_labels = get<2>(scs_size_data);
-//        cout << "SCS problem has " << scs_n_vars << " variables:" << endl;
-//        for (int j = 0; j < scs_start_posns.size(); j++)
-//            cout << scs_labels[j] << "\tstarts at position " << scs_start_posns[j] << endl;
-
+        t2 = timenow();
+        if (output_level > 0) {
+            cout << " done in " << time_string(t2 - t1) << "." << endl;
+            cout << "Creating model and allocating memory..." << flush;
+        }
+        t3 = timenow();
         // 5. Create SCS model, including cone constraint dimensions and types, but without populating the A matrix or b
-        tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M = create_scs_model(
-            f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents, n, d, scs_n_vars, positivity_condition);
-
-        // 5. Populate SCS model from input data
-        t1 = timenow();
-        if (output_level > 0)
-            cout << "Creating coefficient matches... ";
-        vector<unsigned long int> scs_psd_side_lengths(1, s_of_d);
+        vector<vector<int> > exp_list_2d = generate_all_exponents(n, 2 * d, 0);
         vector<unsigned long int> s_of_d_minus_djs;
         vector<unsigned long int> s_of_d_minus_dj2s;
         for (int j = 0; j < g_infos.size(); j++) {
             s_of_d_minus_djs.push_back(n_monomials(n, d - ceil(g_infos[j].degree / 2.0)));
-            scs_psd_side_lengths.push_back(s_of_d_minus_djs[j]);
         }
         for (int j = 0; j < h_infos.size(); j++) {
             s_of_d_minus_dj2s.push_back(n_monomials(n, d - ceil(h_infos[j].degree / 2.0)));
-            scs_psd_side_lengths.push_back(s_of_d_minus_dj2s[j]);
         }
+
+        tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M = create_scs_model(
+            f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents, n, d, exp_list_2d,
+            scs_n_vars, s_of_d_minus_djs, s_of_d_minus_dj2s, positivity_condition, output_level);
+        t4 = timenow();
+        if (output_level > 0) {
+            cout << " total creation/allocation time was " << time_string(t4 - t3) << "." << endl;
+            cout << "Creating coefficient matches...";
+        }
+        // 5. Populate SCS model from input data
+        t5 = timenow();
         create_scs_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
-                                   h_mono_coeffs, h_mono_exponents, n, d, s_of_d,
+                                   h_mono_coeffs, h_mono_exponents, n, d, exp_list_2d, s_of_d,
                                    s_of_d_minus_djs, s_of_d_minus_dj2s, output_level);
-        t2 = timenow();
+        t6 = timenow();
         if (output_level > 0)
-            cout << "Done in " << time_string(t2 - t1) << "." << endl;
+            cout << " done in " << time_string(t6 - t5) << "." << endl;
+        else
+            cout << " finished working in " << time_string(t6 - t1) << "." << endl;
 
         scs_int exitflag;
         scs_int success;
@@ -478,13 +472,12 @@ tuple<double, int, string> sos_level_d(
         ScsSolution *sol = get<2>(M);
         ScsInfo info = get<3>(M);
 
-        // Because matrix side lengths are stored as pointers, pointer must be defined in same scope as model used.
-//        scs_int *scs_psd_side_lengths_array = new scs_int(scs_psd_side_lengths.size());
-//        copy(scs_psd_side_lengths.begin(), scs_psd_side_lengths.end(), scs_psd_side_lengths_array);
-//        k->s = scs_psd_side_lengths_array;
-
         // Solve semidefinite program
+        cout << "Solving..." << flush;
+        t7 = timenow();
         exitflag = scs(d, k, sol, &info);
+        t8 = timenow();
+        cout << "  finished working in " << time_string(t8 - t7) << "." << endl;
 
         // Collect results
         success = exitflag == SCS_SOLVED || exitflag == SCS_SOLVED_INACCURATE;
@@ -507,20 +500,21 @@ tuple<double, int, string> sos_level_d(
 //            cout << "\b]" << endl;
         }
 
-        cout << "Info:\n";
-        cout << "  iter: " << info.iter << endl;
-        cout << "  status: " << info.status << endl;
-        cout << "  status_val: " << info.status_val << endl;
-        cout << "  pobj: " << info.pobj << endl;
-        cout << "  dobj: " << info.dobj << endl;
-        cout << "  res_pri: " << info.res_pri << endl;
-        cout << "  res_dual: " << info.res_dual << endl;
-        cout << "  res_infeas: " << info.res_infeas << endl;
-        cout << "  res_unbdd: " << info.res_unbdd << endl;
-        cout << "  rel_gap: " << info.rel_gap << endl;
-        cout << "  setup_time: " << info.setup_time << endl;
-        cout << "  solve_time: " << info.solve_time << endl;
-
+        if (output_level > 0) {
+            cout << "Info:\n";
+            cout << "  iter: " << info.iter << endl;
+            cout << "  status: " << info.status << endl;
+            cout << "  status_val: " << info.status_val << endl;
+            cout << "  pobj: " << info.pobj << endl;
+            cout << "  dobj: " << info.dobj << endl;
+            cout << "  res_pri: " << info.res_pri << endl;
+            cout << "  res_dual: " << info.res_dual << endl;
+            cout << "  res_infeas: " << info.res_infeas << endl;
+            cout << "  res_unbdd: " << info.res_unbdd << endl;
+            cout << "  rel_gap: " << info.rel_gap << endl;
+            cout << "  setup_time: " << info.setup_time << endl;
+            cout << "  solve_time: " << info.solve_time << endl;
+        }
         solver_specific_status = info.status_val;
         sol_status_string = string(info.status);
 
