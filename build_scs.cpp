@@ -17,10 +17,10 @@
 
 using namespace std;
 
-tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> create_scs_model(
+tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo, int> create_scs_model(
         PolyInfo& f_info, vector<PolyInfo>& g_infos, vector<PolyInfo>& h_infos,
         vector<vector<vector<int> > > &g_mono_exponents, vector<vector<vector<int> > > &h_mono_exponents,
-        int dim, int deg, const vector<vector<int> > &exp_list_2d, int total_vars, vector<unsigned long int> &s_of_d_minus_djs,
+        int dim, int deg, vector<vector<int> > exp_list_2d, int total_vars, vector<unsigned long int> &s_of_d_minus_djs,
         vector<unsigned long int> &s_of_d_minus_dj2s, string positivity_condition, int output_level) {
 
     timestamp_t t1, t2, t3, t4;
@@ -62,8 +62,9 @@ tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> create_scs_model(
     d->n = n;
     SCS(set_default_settings)(d);
     d->stgs->verbose = 0;
-    d->stgs->acceleration_lookback = 10;
-    d->stgs->rho_x = 1e-3;
+//    d->stgs->acceleration_lookback = 100;
+    // d->stgs->rho_x = 1e-3;
+    d->stgs->max_iters = 50000;
 
     if (positivity_condition == "PSD") {
         // Create mixture of zero, free, and PSD cone variables
@@ -98,10 +99,10 @@ tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> create_scs_model(
         cout << "  Computing number of nonzeros... " << flush;
     }
     t3 = timenow();
-//    scs_int nnz = (scs_int) compute_scs_nonzeros_new(f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents,
-//            dim, deg, exp_list_2d, s_of_d_minus_djs, s_of_d_minus_dj2s);
-    scs_int nnz = (scs_int) compute_scs_nonzeros(f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents,
-                                                     dim, deg, exp_list_2d);
+    scs_int nnz = (scs_int) compute_scs_nonzeros_new(f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents,
+            dim, deg, exp_list_2d, s_of_d_minus_djs, s_of_d_minus_dj2s);
+//    scs_int nnz = (scs_int) compute_scs_nonzeros(f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents,
+//                                                     dim, deg, exp_list_2d);
     t4 = timenow();
     if (output_level > 0)
         cout << "Done in " << time_string(t4 - t3) << ". The A matrix (SCS standard form) has " << nnz << " nonzeros." << endl << flush;
@@ -112,14 +113,14 @@ tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> create_scs_model(
     A->n = d->n;
     A->m = d->m;
 
-    return make_tuple(k, d, sol, info);
+    return make_tuple(k, d, sol, info, nnz);
 }
 
-void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M,
+void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo, int> M,
                                 vector<double> &f_mono_coeffs, vector<vector<int> > &f_mono_exponents,
                                 vector<vector<double> > &g_mono_coeffs, vector<vector<vector<int> > > &g_mono_exponents,
                                 vector<vector<double> > &h_mono_coeffs, vector<vector<vector<int> > > &h_mono_exponents,
-                                int dim, int deg, const vector<vector<int> > & exp_list_2d,
+                                int dim, int deg, vector<vector<int> > exp_list_2d,
                                 unsigned long int s_of_d, vector<unsigned long int> &s_of_d_minus_djs,
                                 vector<unsigned long int> &s_of_d_minus_dj2s, int output_level) {
 
@@ -128,6 +129,8 @@ void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo
     ScsMatrix *A = d->A;
     scs_float *b = d->b;
     scs_float *c = d->c;
+
+    int nnz_expected = get<4>(M);
 
     int nnz_counter = 0;
     int col_counter = 0;
@@ -168,7 +171,9 @@ void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo
                 A->x[nnz_counter] += sqrt(2);  // SCS stores the matrix with off-diagonals already scaled by sqrt(2)
             //cout << "A->x[" << nnz_counter << "] = " << A->x[nnz_counter] << endl;
             nnz_counter++;
-        } else {cout << "WARNING: Coefficient match not found!\n";}
+        } else {
+            cout << "WARNING: Coefficient match not found!\n";
+        }
         // Add an entry to bind the element of sigma_0 to the PSD cone
         A->i[nnz_counter] = s_of_2d + i; //cout << "A->i[" << nnz_counter << "] = " << A->i[nnz_counter] << endl;
         A->x[nnz_counter] = -1.0; //cout << "A->x[" << nnz_counter << "] = " << A->x[nnz_counter] << endl;
@@ -205,7 +210,9 @@ void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo
                     else
                         A->x[nnz_counter] += sqrt(2) * g_mono_coeffs[j][t];  // SCS stores the matrix with off-diagonals already scaled by sqrt(2)
                     //cout << "A->x[" << nnz_counter << "] = " << A->x[nnz_counter] << endl;
-                } else { cout << "WARNING: Coefficient match not found!\n"; }
+                } else {
+                    cout << "WARNING: Coefficient match not found!\n";
+                }
                 if (add_nz) nnz_counter++;
             }
             // Add an entry to bind the element of sigma_j to the PSD cone
@@ -246,7 +253,9 @@ void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo
                     else
                         A->x[nnz_counter] += sqrt(2) * h_mono_coeffs[j][t];  // SCS stores the matrix with off-diagonals already scaled by sqrt(2)
                     //cout << "A->x[" << nnz_counter << "] = " << A->x[nnz_counter] << endl;
-                } else { cout << "WARNING: Coefficient match not found!\n"; }
+                } else {
+                    cout << "WARNING: Coefficient match not found!\n";
+                }
                 if (add_nz) nnz_counter++;
             }
         }
@@ -254,6 +263,11 @@ void create_scs_coeff_matches(tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo
     }
 
     A->p[col_counter] = nnz_counter; //cout << "A->p[" << col_counter + 1 << "] = " << nnz_counter << endl;
+
+    if (nnz_counter != nnz_expected) {
+        cout << "Number of nonzeros created (" << nnz_counter << ") is different from number expected ("
+            << nnz_expected << ")!\n";
+    }
 
     // Update RHS of equality constraint for coefficients of monomials in f
 
@@ -281,8 +295,10 @@ int compute_scs_nonzeros_new(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector
     col_counter++;
 
     int s_of_d = n_monomials(dim, deg);
-    int s_of_2d = n_monomials(dim, deg * 2);
     unsigned long int idx;
+
+    unsigned long int s_of_2d = exp_list_2d.size();
+//    double *col_entries = new double(s_of_2d);
 
     // Add entries for sigma_0
     int vmat_len = size_of_vmat(s_of_d);
@@ -300,7 +316,9 @@ int compute_scs_nonzeros_new(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector
         auto it = find(exp_list_2d.begin(), exp_list_2d.end(), k1k2_exponent);
         if (it != exp_list_2d.end()) {
             nnz_counter++;
-        } else {cout << "WARNING: Coefficient match not found!\n";}
+        } else {
+            cout << "WARNING: Coefficient match not found!\n";
+        }
         // Add an entry to bind the element of sigma_0 to the PSD cone
         nnz_counter++;
     }
@@ -312,24 +330,29 @@ int compute_scs_nonzeros_new(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector
     for (int j = 0; j < n_g; j++) {
         k1 = -1; k2 = 0;
         vmat_len = size_of_vmat(s_of_d_minus_djs[j]);
-        for (int i = 0; i < vmat_len; i++) {  // Work left to right across A matrix
+        for (int i = 0; i < vmat_len; i++) {  // Work left to right across A matrix, columns are entries of sigma_j
             k1++; // k1 starts at -1 before this loop, so that the first iteration yields k1 = 0.
             if (k1 == s_of_d_minus_djs[j]) {
                 k2++; // Increment column
                 k1 = k2; // Set k1 to point to the diagonal entry of the matrix in column k2
             }
             // Add an entry for the coefficient matching
-            k1k2_exponent = add_vecs(exp_list_2d[k1], exp_list_2d[k2]);
-            add_nz = false;
-            for (int t = 0; t < g_mono_exponents[j].size(); t++) {
-                exp_to_match = add_vecs(k1k2_exponent, g_mono_exponents[j][t]);
-                auto it = find(exp_list_2d.begin(), exp_list_2d.end(), exp_to_match);
-                if (it != exp_list_2d.end()) {
-                    add_nz = true;
-                    break;
-                } else { cout << "WARNING: Coefficient match not found!\n"; }
-            }
-            if (add_nz) nnz_counter++;
+            k1k2_exponent = add_vecs(exp_list_2d[k1], exp_list_2d[k2]);  // Exponent of the (k1, k2) entry of sigma_j
+//            for (unsigned long int pos = 0; pos < s_of_2d; pos++) col_entries[pos] = 0.0;
+
+            nnz_counter += g_mono_exponents[j].size(); // Add one nonzero per term of polynomial g_j
+
+//            for (int t = 0; t < g_mono_exponents[j].size(); t++) { // For each term in g_j, add a nonzero to column
+//                add_nz = false;
+//                exp_to_match = add_vecs(k1k2_exponent, g_mono_exponents[j][t]);
+//                auto it = find(exp_list_2d.begin(), exp_list_2d.end(), exp_to_match);
+//                if (it != exp_list_2d.end()) {
+//                    idx = distance(exp_list_2d.begin(), it);
+//                    add_nz = col_entries[idx] == 0;
+//                    col_entries[idx] = 1; // Should really be g_mono_coeffs[j][t] in case two terms t cancel each other
+//                } else { cout << "WARNING: Coefficient match not found!\n"; }
+//                if (add_nz) nnz_counter++;
+//            }
             // Add an entry to bind the element of sigma_j to the PSD cone
             nnz_counter++;
         }
@@ -349,16 +372,21 @@ int compute_scs_nonzeros_new(PolyInfo& f_info, vector<PolyInfo>& g_infos, vector
             }
             // Add an entry for the coefficient matching
             k1k2_exponent = add_vecs(exp_list_2d[k1], exp_list_2d[k2]);
-            add_nz = false;
-            for (int t = 0; t < h_mono_exponents[j].size(); t++) {
-                exp_to_match = add_vecs(k1k2_exponent, h_mono_exponents[j][t]);
-                auto it = find(exp_list_2d.begin(), exp_list_2d.end(), exp_to_match);
-                if (it != exp_list_2d.end()) {
-                    add_nz = true;
-                    break;
-                } else { cout << "WARNING: Coefficient match not found!\n"; }
-            }
-            if (add_nz) nnz_counter++;
+
+            nnz_counter += h_mono_exponents[j].size();
+
+//            for (unsigned long int pos = 0; pos < s_of_2d; pos++) col_entries[pos] = 0.0;
+//            for (int t = 0; t < h_mono_exponents[j].size(); t++) {
+//                add_nz = false;
+//                exp_to_match = add_vecs(k1k2_exponent, h_mono_exponents[j][t]);
+//                auto it = find(exp_list_2d.begin(), exp_list_2d.end(), exp_to_match);
+//                if (it != exp_list_2d.end()) {
+//                    idx = distance(exp_list_2d.begin(), it);
+//                    add_nz = col_entries[idx] == 0;
+//                    col_entries[idx] = 1; // Should really be h_mono_coeffs[j][t] in case two terms t cancel each other
+//                } else { cout << "WARNING: Coefficient match not found!\n"; }
+//                if (add_nz) nnz_counter++;
+//            }
         }
         col_counter += vmat_len;
     }

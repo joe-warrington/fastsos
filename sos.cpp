@@ -178,6 +178,7 @@ void eliminate_unused_dims(int& n, vector<vector<int> >& f_exps, vector<vector<v
             if (output_level > 0)
                 cout << "Eliminated the unused dimension x" << i + 1 << " before any other processing took place.\n";
         }
+
     }
 
     n -= dims_to_subtract; // External scope will now see the reduced dimension of n, before calculating monomial lists
@@ -254,7 +255,7 @@ tuple<double, int, string> sos_level_d(
     double obj_val = 0.0;
     int sol_status = 0;
     int solver_specific_status = 0;
-    string sol_status_string = "";
+    string sol_status_string;
 
     // 0. State objective and constraints as strings read from file
     int m = g_strings.size();
@@ -327,7 +328,7 @@ tuple<double, int, string> sos_level_d(
     }
     p = h_infos.size(); // Update m to account for skipped strings containing no terms
 
-    eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, h_mono_exponents, 1);  // Update n and input data, removing unused dims
+    eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, h_mono_exponents, output_level);  // Update n and input data, removing unused dims
 
     // 2. Work out minimum legal d for SOS problem and set d to this if necessary
     int d = compute_legal_d(f_info, g_infos, h_infos, d_request);
@@ -384,7 +385,7 @@ tuple<double, int, string> sos_level_d(
             //Extract solution
             cout << "  finished working in " << time_string(t2 - t1) << "." << endl;
             auto sol_lambda = lambda->level();
-            cout << color_green << "  Lower bound for d = " << d << ": " << (*sol_lambda) << color_reset << endl;
+            cout << color_green << "  Lower bound for d = " << d << ": " << (*sol_lambda)[0] << color_reset << endl;
             auto sol_sigma_0 = sigma_0->level();
             int max_matrix_print_size = 0;  // Change this hard-coded flag to print sigma matrices depending on size
             if (s_of_d <= max_matrix_print_size)
@@ -401,18 +402,22 @@ tuple<double, int, string> sos_level_d(
             }
             obj_val = M->primalObjValue();
             sol_status = 1;
+            sol_status_string = "Solved";
         }
         catch (mosek::fusion::SolutionError &e) {
             cout << color_yellow << " Didn't solve!\n  " << e.toString() << color_reset << endl;
             sol_status = -1;
+            sol_status_string = "Not solved";
         }
         catch (ParameterError &e) {
             cout << color_red << " Parameter error!\n  " << e.toString() << color_reset << endl;
             sol_status = -1;
+            sol_status_string = "Not solved";
         }
         catch (const exception &e) {
             cout << color_red << " Generic exception:\n  " << e.what() << color_reset << endl;
             sol_status = -1;
+            sol_status_string = "Not solved";
         }
 
     } else if (solver == "scs") {
@@ -444,7 +449,7 @@ tuple<double, int, string> sos_level_d(
             s_of_d_minus_dj2s.push_back(n_monomials(n, d - ceil(h_infos[j].degree / 2.0)));
         }
 
-        tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo> M = create_scs_model(
+        tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo, int> M = create_scs_model(
             f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents, n, d, exp_list_2d,
             scs_n_vars, s_of_d_minus_djs, s_of_d_minus_dj2s, positivity_condition, output_level);
         t4 = timenow();
@@ -468,14 +473,14 @@ tuple<double, int, string> sos_level_d(
 
         // Solve SDP
         ScsCone *k = get<0>(M);
-        ScsData *d = get<1>(M);
+        ScsData *data = get<1>(M);
         ScsSolution *sol = get<2>(M);
         ScsInfo info = get<3>(M);
 
         // Solve semidefinite program
         cout << "Solving..." << flush;
         t7 = timenow();
-        exitflag = scs(d, k, sol, &info);
+        exitflag = scs(data, k, sol, &info);
         t8 = timenow();
         cout << "  finished working in " << time_string(t8 - t7) << "." << endl;
 
@@ -484,7 +489,7 @@ tuple<double, int, string> sos_level_d(
         if (success) {
 
             obj_val = (double) (-1.0 * info.pobj);  // -1 is because we are doing (-min (-obj)) for maximization
-            cout << "Optimal value: " << obj_val << endl;
+            cout << color_green << "  Lower bound for d = " << d << ": " << obj_val << color_reset << endl;
 
 //            cout << "x* = [";
 //            for (int i = 0; i < d->n; i++)
@@ -529,7 +534,7 @@ tuple<double, int, string> sos_level_d(
         }
 
         // Free up memory allocated to model and solution
-        SCS(free_data)(d, k);
+        SCS(free_data)(data, k);
         SCS(free_sol)(sol);
     } else {
         cout << "Unrecognized solver choice: " << solver << endl;

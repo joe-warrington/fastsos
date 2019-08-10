@@ -1,4 +1,4 @@
-# FastSOS sum-of-squares parser
+ # FastSOS sum-of-squares parser
 
 ## About
 

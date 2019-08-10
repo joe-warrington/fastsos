@@ -141,11 +141,10 @@ tuple<bool, bool, double, int> test_sos_program(
         string& obj_in, vector<string> ineq_constrs_in, vector<string> eq_constrs_in, int d_in, string pos_cert_in,
         tuple<int, double, double, bool> expected_result_in, string solver_choice) {
 
-    bool obj_val_correct = false;
 
     // Solve SOS problem
 
-    int testing_output_level = 1;  // Controls level of text output during tests
+    int testing_output_level = 0;  // Controls level of text output during tests
 
     auto sol_info = sos_level_d(obj_in, ineq_constrs_in, eq_constrs_in, d_in, pos_cert_in, testing_output_level, solver_choice);
 
@@ -153,12 +152,13 @@ tuple<bool, bool, double, int> test_sos_program(
     double obj_val = get<0>(sol_info);
     int sol_status = get<1>(sol_info);
     string sol_status_string = get<2>(sol_info);
-
+    // expected_result = (sol_statuses[i], opt_values[i], sol_tols[i], num_problems[i])
     int expected_sol_status = get<0>(expected_result_in);
     double expected_obj_val = get<1>(expected_result_in);
     double expected_tolerance = get<2>(expected_result_in);
     bool expected_num_problems = get<3>(expected_result_in);
 
+    bool obj_val_correct = false;
     bool report_obj_value = false;
 
     bool sol_status_correct = sol_status == expected_sol_status;
@@ -182,7 +182,7 @@ tuple<bool, bool, double, int> test_sos_program(
     }
 
     if (report_obj_value) cout << "Objective value:\t" << obj_val << endl;
-    cout << "Solution status:\t\t" << sol_status << " - " << sol_status_string << endl;
+    cout << "Solution status: \t" << sol_status << " - " << sol_status_string << endl;
 
     return make_tuple(obj_val_correct, sol_status_correct, obj_val, sol_status);
 }
@@ -248,7 +248,7 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
                                1e-4,
                                1e-4};
     vector<bool> num_problems = {false,
-                                 true,
+                                 false,
                                  false,
                                  false,
                                  false,
@@ -269,21 +269,21 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
         for (int j = 0; j < input_ineq_constrs[i].size(); j++)
             problem_string += input_ineq_constrs[i][j] + " >= 0,  ";
         for (int j = 0; j < input_eq_constrs[i].size(); j++)
-            problem_string += input_eq_constrs[i][j] + " = 0,  ";
-        cout << "#" << i + 1 << "\t" << problem_string << "\b\b" << endl;
+            problem_string += input_eq_constrs[i][j] + " = 0, ";
+        cout << "#" << i + 1 << "\t" << problem_string << "\b\b " << endl;
         expected_result = make_tuple(sol_statuses[i], opt_values[i], sol_tols[i], num_problems[i]);
 
         test_output = test_sos_program(input_objs[i], input_ineq_constrs[i], input_eq_constrs[i],
                                        relaxation_degree[i], positivity_certs[i], expected_result, solver_choice);
-
-        if (!get<0>(test_output) || !get<1>(test_output)) {
+        //test_output = (obj_val_correct, sol_status_correct, obj_val, sol_status)
+        if (!get<0>(test_output) || !get<1>(test_output)) { // either objective value or solution status incorrect
             cout << color_red << "FAIL: ";
             if (!get<0>(test_output) && (get<3>(test_output) == 1 || get<3>(test_output) == 2)) {
                 cout << "Objective value is incorrect: " << get<2>(test_output) << " instead of "
                         << opt_values[i] << " +- " << sol_tols[i] << endl;
             }
             if (!get<1>(test_output)) {
-                cout << "Overall solution status is incorrect: " << get<3>(test_output) << " instead of " << sol_statuses[i] << endl;
+                cout << "Solution status is incorrect: " << get<3>(test_output) << " instead of " << sol_statuses[i] << endl;
             }
             fail_count++;
             cout << color_reset << "\n";
