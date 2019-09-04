@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include <vector>
-#include "polystring.h"
+#include "manip_poly.h"
 #include "sos.h"
 #include "tests.h"
 

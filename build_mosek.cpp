@@ -4,11 +4,14 @@
 
 #include <iostream>
 #include <iomanip>
+
+#include "timing.h"
 #include "mosek.h"
 #include "fusion.h"
-#include "polystring.h"
+#include "manip_poly.h"
 #include "build_mosek.h"
 #include "sos.h"
+
 #include <sys/time.h>
 #include <math.h>
 #include <vector>
@@ -17,6 +20,11 @@
 using namespace std;
 using namespace mosek::fusion;
 using namespace monty;
+
+const string COLOR_RED("\033[1;31m");
+const string COLOR_YELLOW("\033[1;33m");
+const string COLOR_GREEN("\033[1;32m");
+const string COLOR_RESET("\033[0m");
 
 void mosek_constrain_to_cone(Model::t &M, Variable::t &matrix_var, const int matrix_size, const string &cone_type) {
     if (cone_type == "Sym") {
@@ -138,10 +146,10 @@ vector<Variable::t>, vector<unsigned long int> > create_mosek_model(
 
 void create_mosek_coeff_matches(Model::t &M, vector<double> &f_mono_coeffs, vector<vector<int> > &f_mono_exponents,
                                 vector<vector<double> > &g_mono_coeffs, vector<vector<vector<int> > > &g_mono_exponents,
-vector<vector<double> > &h_mono_coeffs, vector<vector<vector<int> > > &h_mono_exponents,
-int n, int d, unsigned long int s_of_d, Variable::t &lambda, Variable::t &sigma_0,
-        vector<Variable::t> &sigma_j, vector<unsigned long int> &s_of_d_minus_djs,
-        vector<Variable::t> &tau_j, vector<unsigned long int> &s_of_d_minus_dj2s,
+                                vector<vector<double> > &h_mono_coeffs, vector<vector<vector<int> > > &h_mono_exponents,
+                                int n, int d, unsigned long int s_of_d, Variable::t &lambda, Variable::t &sigma_0,
+                                vector<Variable::t> &sigma_j, vector<unsigned long int> &s_of_d_minus_djs,
+                                vector<Variable::t> &tau_j, vector<unsigned long int> &s_of_d_minus_dj2s,
                                 int output_level) {
 // For monomials in s(2d), find all entries (alpha, beta) for which x^(alpha+beta) = monomial.
 // For the entries of s(2d) for which there is a term in f, set RHS of constraint to the coefficient. Otherwise 0.
@@ -320,4 +328,112 @@ int n, int d, unsigned long int s_of_d, Variable::t &lambda, Variable::t &sigma_
         }
         M->constraint(constr_lhs, Domain::equalsTo(constr_rhs));
     }
+}
+
+
+tuple<double, int, string> solve_with_mosek(tuple<int, int, int, PolyInfo, vector<PolyInfo>, vector<PolyInfo>,
+        vector<double>, vector<vector<int> >,
+        vector<vector <double> >, vector<vector <vector <int> > >,
+        vector<vector <double> >, vector<vector <vector <int> > > > data_tuple, int d, string positivity_condition, int output_level) {
+
+    int n = get<0>(data_tuple); int m = get<1>(data_tuple); int p = get<2>(data_tuple);
+    PolyInfo f_info = get<3>(data_tuple);
+    vector<PolyInfo> g_infos = get<4>(data_tuple);
+    vector<PolyInfo> h_infos = get<5>(data_tuple);
+    vector<double> f_mono_coeffs = get<6>(data_tuple);
+    vector<vector<int> > f_mono_exponents = get<7>(data_tuple);
+    vector<vector<double> > g_mono_coeffs = get<8>(data_tuple);
+    vector<vector<vector<int> > > g_mono_exponents = get<9>(data_tuple);
+    vector<vector<double> > h_mono_coeffs = get<10>(data_tuple);
+    vector<vector<vector<int> > > h_mono_exponents = get<11>(data_tuple);
+
+    double obj_val = 0.0;
+    int sol_status = 0;
+    int solver_specific_status = 0;
+    string sol_status_string;
+
+    // 4. Create Mosek model and data entries of correct dimensions
+    timestamp_t t1, t2, t3, t4;
+    if (output_level > 0) {
+        cout << "Creating MOSEK variables and " << positivity_condition << " positivity constraints... " << flush;
+    }
+    else {
+        cout << "Building..." << flush;
+    }
+    t1 = timenow();
+    unsigned long int s_of_d = n_monomials(n, d);
+    auto tuple_out = create_mosek_model(f_info, g_infos, h_infos, n, d, s_of_d, positivity_condition);
+    Model::t M = get<0>(tuple_out);
+    Variable::t lambda = get<1>(tuple_out);
+    auto _M = finally([&]() { M->dispose(); });
+    Variable::t sigma_0 = get<2>(tuple_out);
+    vector<Variable::t> sigma_j = get<3>(tuple_out);
+    vector<Variable::t> tau_j = get<5>(tuple_out);
+    vector<unsigned long int> s_of_d_minus_djs = get<4>(tuple_out);
+    vector<unsigned long int> s_of_d_minus_dj2s = get<6>(tuple_out);
+    t2 = timenow();
+    if (output_level > 0) {
+        cout << "done in " << time_string(t2 - t1) << "." << endl << "  Matrix side lengths are " << s_of_d << ", ";
+        for (int j = 0; j < m; j++) { cout << s_of_d_minus_djs[j] << ", "; }
+        for (int j = 0; j < p; j++) { cout << s_of_d_minus_dj2s[j] << ", "; }
+        cout << "\b\b." << endl;
+    }
+    // 5. Populate Mosek model from input data
+    t3 = timenow();
+    create_mosek_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
+                               h_mono_coeffs, h_mono_exponents, n, d, s_of_d,
+                               lambda, sigma_0, sigma_j, s_of_d_minus_djs, tau_j, s_of_d_minus_dj2s, output_level);
+    t4 = timenow();
+    if (output_level > 0) {
+        cout << "\b\b\b\b done in " << time_string(t4 - t3) << "." << endl;
+    }
+    else {
+        cout << " finished working in " << time_string(t4 - t1) << "." << endl;
+    }
+
+    // 6. Solve and collect optimality information
+    cout << "Solving..." << flush;
+    try {
+        t1 = timenow();
+        M->solve();
+        t2 = timenow();
+        //Extract solution
+        cout << "  finished working in " << time_string(t2 - t1) << "." << endl;
+        auto sol_lambda = lambda->level();
+        cout << COLOR_GREEN << "  Lower bound for d = " << d << ": " << (*sol_lambda)[0] << COLOR_RESET << endl;
+        auto sol_sigma_0 = sigma_0->level();
+        int max_matrix_print_size = 0;  // Change this hard-coded flag to print sigma matrices depending on size
+//        if (s_of_d <= max_matrix_print_size)
+//            print_vec("sigma_0", (*sol_sigma_0));
+//        for (int j = 0; j < m; j++) {
+//            auto sol_sigma_j = sigma_j[j]->level();
+//            if (s_of_d_minus_djs[j] <= max_matrix_print_size)
+//                print_vec("sigma_" + to_string(j + 1), (*sol_sigma_j));
+//        }
+//        for (int j = 0; j < p; j++) {
+//            auto sol_tau_j = tau_j[j]->level();
+//            if (s_of_d_minus_dj2s[j] <= max_matrix_print_size)
+//                print_vec("tau_" + to_string(j + 1), (*sol_tau_j));
+//        }
+        obj_val = M->primalObjValue();
+        sol_status = 1;
+        sol_status_string = "Solved";
+    }
+    catch (mosek::fusion::SolutionError &e) {
+        cout << COLOR_YELLOW << " Didn't solve!\n  " << e.toString() << COLOR_RESET << endl;
+        sol_status = -1;
+        sol_status_string = "Not solved";
+    }
+    catch (ParameterError &e) {
+        cout << COLOR_RED << " Parameter error!\n  " << e.toString() << COLOR_RESET << endl;
+        sol_status = -1;
+        sol_status_string = "Not solved";
+    }
+    catch (const exception &e) {
+        cout << COLOR_RED << " Generic exception:\n  " << e.what() << COLOR_RESET << endl;
+        sol_status = -1;
+        sol_status_string = "Not solved";
+    }
+
+    return make_tuple(obj_val, sol_status, sol_status_string);
 }

@@ -2,15 +2,15 @@
 
 #include <iostream>
 #include <vector>
-#include "polystring.h"
+#include "manip_poly.h"
 #include "sos.h"
 
 using namespace std;
 
-const string color_red("\033[1;31m");
-const string color_yellow("\033[1;33m");
-const string color_green("\033[1;32m");
-const string color_reset("\033[0m");
+const string COLOR_RED("\033[1;31m");
+const string COLOR_YELLOW("\033[1;33m");
+const string COLOR_GREEN("\033[1;32m");
+const string COLOR_RESET("\033[0m");
 
 tuple<bool, bool, bool, PolyInfo, vector<double>, vector<vector<int> >> test_polynomial_parse(
         string s, vector<int> info_in, vector<double> coeffs_in, vector<vector<int> > exponents_in) {
@@ -19,7 +19,9 @@ tuple<bool, bool, bool, PolyInfo, vector<double>, vector<vector<int> >> test_pol
     vector<double> coeffs_output(poly_info.n_terms, 0.0); // List of monomial coefficients
     vector<vector<int> > exponents_output(poly_info.n_terms, vector<int>(poly_info.dimension, 0));
     parse_poly(s, coeffs_output, exponents_output, poly_info, false);
-    bool info_match = (info_in[0] == poly_info.dimension && info_in[1] == poly_info.degree && info_in[2] == poly_info.n_terms);
+    bool info_match = (info_in[0] == poly_info.dimension &&
+                       info_in[1] == poly_info.degree &&
+                       info_in[2] == poly_info.n_terms);
     bool coeffs_match = coeffs_in == coeffs_output;
     bool exponents_match = exponents_in == exponents_output;
 
@@ -102,7 +104,7 @@ tuple<int, int> run_polynomial_parser_tests() {
         tuple<bool, bool, bool, PolyInfo, vector<double>, vector<vector<int> >> test_passed =
                 test_polynomial_parse(input_strings[i], info_to_match[i], coeffs_to_match[i], exponents_to_match[i]);
         if (!get<0>(test_passed) || !get<1>(test_passed) || !get<2>(test_passed)) {
-            cout << "#" << i + 1 << "\t" << color_red << "FAIL: ";
+            cout << "#" << i + 1 << "\t" << COLOR_RED << "FAIL: ";
             if (!get<0>(test_passed)) // coeffs_match is false
                 cout << "Polynomial info (dimension, degree, no. of terms) doesn't match for " << input_strings[i] << ". " << endl;
             if (!get<1>(test_passed)) // coeffs_match is false
@@ -124,9 +126,9 @@ tuple<int, int> run_polynomial_parser_tests() {
                 print_polynomial_table(get<4>(test_passed), get<5>(test_passed));
             }
             fail_count++;
-            cout << color_reset;
+            cout << COLOR_RESET;
         } else
-            cout  << "#" << i + 1 << "\t" << color_green << "PASS: " << input_strings[i] << " parsed correctly." << color_reset << endl;
+            cout  << "#" << i + 1 << "\t" << COLOR_GREEN << "PASS: " << input_strings[i] << " parsed correctly." << COLOR_RESET << endl;
     }
     if (fail_count > 0)
         cout << "WARNING: " << fail_count << "/" << test_count << " polynomial parsing tests failed." << endl;
@@ -146,13 +148,14 @@ tuple<bool, bool, double, int> test_sos_program(
 
     int testing_output_level = 0;  // Controls level of text output during tests
 
-    auto sol_info = sos_level_d(obj_in, ineq_constrs_in, eq_constrs_in, d_in, pos_cert_in, testing_output_level, solver_choice);
+    auto sol_info = sos_level_d(obj_in, ineq_constrs_in, eq_constrs_in, d_in, pos_cert_in,
+                                testing_output_level, solver_choice);
 
     // Collect result and check against expected behaviour
     double obj_val = get<0>(sol_info);
     int sol_status = get<1>(sol_info);
     string sol_status_string = get<2>(sol_info);
-    // expected_result = (sol_statuses[i], opt_values[i], sol_tols[i], num_problems[i])
+
     int expected_sol_status = get<0>(expected_result_in);
     double expected_obj_val = get<1>(expected_result_in);
     double expected_tolerance = get<2>(expected_result_in);
@@ -161,7 +164,7 @@ tuple<bool, bool, double, int> test_sos_program(
     bool obj_val_correct = false;
     bool report_obj_value = false;
 
-    bool sol_status_correct = sol_status == expected_sol_status;
+    bool sol_status_correct = (sol_status == expected_sol_status);
 
     if (sol_status == 1 || sol_status == 2) {
         report_obj_value = true;
@@ -277,7 +280,7 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
                                        relaxation_degree[i], positivity_certs[i], expected_result, solver_choice);
         //test_output = (obj_val_correct, sol_status_correct, obj_val, sol_status)
         if (!get<0>(test_output) || !get<1>(test_output)) { // either objective value or solution status incorrect
-            cout << color_red << "FAIL: ";
+            cout << COLOR_RED << "FAIL: ";
             if (!get<0>(test_output) && (get<3>(test_output) == 1 || get<3>(test_output) == 2)) {
                 cout << "Objective value is incorrect: " << get<2>(test_output) << " instead of "
                         << opt_values[i] << " +- " << sol_tols[i] << endl;
@@ -286,9 +289,9 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
                 cout << "Solution status is incorrect: " << get<3>(test_output) << " instead of " << sol_statuses[i] << endl;
             }
             fail_count++;
-            cout << color_reset << "\n";
+            cout << COLOR_RESET << "\n";
         } else
-            cout << color_green << "PASS: solution behaved as expected.\n" << color_reset << endl;
+            cout << COLOR_GREEN << "PASS: solution behaved as expected.\n" << COLOR_RESET << endl;
     }
     if (fail_count > 0)
         cout << "WARNING: " << fail_count << "/" << test_count << " SOS programming tests failed." << endl;

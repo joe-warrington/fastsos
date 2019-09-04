@@ -2,17 +2,9 @@
 
 #include <iostream>
 #include <iomanip>
-#include "mosek.h"
-#include "fusion.h"
 
 #include "timing.h"
-#include "scs.h"
-#include "util.h"
-#include "linalg.h"
-#include "amatrix.h"
-#include "cones.h"
-
-#include "polystring.h"
+#include "manip_poly.h"
 #include "build_mosek.h"
 #include "build_scs.h"
 
@@ -21,24 +13,20 @@
 #include <tuple>
 
 using namespace std;
-using namespace mosek::fusion;
-using namespace monty;
 
-const string color_red("\033[1;31m");
-const string color_yellow("\033[1;33m");
-const string color_green("\033[1;32m");
-const string color_reset("\033[0m");
-
-
+const string COLOR_RED("\033[1;31m");
+const string COLOR_YELLOW("\033[1;33m");
+const string COLOR_GREEN("\033[1;32m");
+const string COLOR_RESET("\033[0m");
 
 unsigned long int a_choose_b(int a, int b){
     // Formula for a-choose-b is a!/[b!(a-b)!]
     if(a <= 0 || b <= 0) {
-        cout << color_red << "Cannot compute a-choose-b for a = " << a << " and b = " << b << "!" << endl;
+        cout << COLOR_RED << "Cannot compute a-choose-b for a = " << a << " and b = " << b << "!" << endl;
         exit(1);
     }
     else if (b > a) {
-        cout << color_red << "Cannot compute a-choose-b for b greater than a! (" << b << " > " << a << ")" << endl;
+        cout << COLOR_RED << "Cannot compute a-choose-b for b greater than a! (" << b << " > " << a << ")" << endl;
         exit(1);
     }
     else if (b == a) {
@@ -252,235 +240,31 @@ tuple<double, int, string> sos_level_d(
         string& f_string, vector<string>& g_strings, vector<string>& h_strings,
         int d_request, string& positivity_condition, int output_level, string solver) {
 
-    double obj_val = 0.0;
-    int sol_status = 0;
-    int solver_specific_status = 0;
-    string sol_status_string;
-
     // 1. Parse polynomial strings and convert to tabular form
     auto data_tuple = create_polynomial_tables(f_string, g_strings, h_strings, output_level);
-    int n = get<0>(data_tuple); int m = get<1>(data_tuple); int p = get<2>(data_tuple);
-    PolyInfo f_info = get<3>(data_tuple);
-    vector<PolyInfo> g_infos = get<4>(data_tuple);
-    vector<PolyInfo> h_infos = get<5>(data_tuple);
-    vector<double> f_mono_coeffs = get<6>(data_tuple);
-    vector<vector<int> > f_mono_exponents = get<7>(data_tuple);
-    vector<vector<double> > g_mono_coeffs = get<8>(data_tuple);
-    vector<vector<vector<int> > > g_mono_exponents = get<9>(data_tuple);
-    vector<vector<double> > h_mono_coeffs = get<10>(data_tuple);
-    vector<vector<vector<int> > > h_mono_exponents = get<11>(data_tuple);
     // Update n and input data, removing unused dims
+    int n = get<0>(data_tuple);
+    vector<vector<int> > f_mono_exponents = get<7>(data_tuple);
+    vector<vector<vector<int> > > g_mono_exponents = get<9>(data_tuple);
+    vector<vector<vector<int> > > h_mono_exponents = get<11>(data_tuple);
     eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, h_mono_exponents, output_level);
 
     // 2. Work out minimum legal d for SOS problem and set d to this if necessary
+    PolyInfo f_info = get<3>(data_tuple);
+    vector<PolyInfo> g_infos = get<4>(data_tuple);
+    vector<PolyInfo> h_infos = get<5>(data_tuple);
     int d = compute_legal_d(f_info, g_infos, h_infos, d_request);
 
-    // 3. Work out size of PSD matrix
-    unsigned long int s_of_d = n_monomials(n, d);
-
+    // 3. Pass to solver
+    tuple<double, int, string> sol_tuple;
     if (solver == "mosek") {
-
-        // 4. Create Mosek model and data entries of correct dimensions
-        timestamp_t t1, t2, t3, t4;
-        if (output_level > 0) {
-            cout << "Creating MOSEK variables and " << positivity_condition << " positivity constraints... " << flush;
-        }
-        else {
-            cout << "Building..." << flush;
-        }
-        t1 = timenow();
-        auto tuple_out = create_mosek_model(f_info, g_infos, h_infos, n, d, s_of_d, positivity_condition);
-        Model::t M = get<0>(tuple_out);
-        Variable::t lambda = get<1>(tuple_out);
-        auto _M = finally([&]() { M->dispose(); });
-        Variable::t sigma_0 = get<2>(tuple_out);
-        vector<Variable::t> sigma_j = get<3>(tuple_out);
-        vector<Variable::t> tau_j = get<5>(tuple_out);
-        vector<unsigned long int> s_of_d_minus_djs = get<4>(tuple_out);
-        vector<unsigned long int> s_of_d_minus_dj2s = get<6>(tuple_out);
-        t2 = timenow();
-        if (output_level > 0) {
-            cout << "done in " << time_string(t2 - t1) << "." << endl << "  Matrix side lengths are " << s_of_d << ", ";
-            for (int j = 0; j < m; j++) { cout << s_of_d_minus_djs[j] << ", "; }
-            for (int j = 0; j < p; j++) { cout << s_of_d_minus_dj2s[j] << ", "; }
-            cout << "\b\b." << endl;
-        }
-        // 5. Populate Mosek model from input data
-        t3 = timenow();
-        create_mosek_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
-                                   h_mono_coeffs, h_mono_exponents, n, d, s_of_d,
-                                   lambda, sigma_0, sigma_j, s_of_d_minus_djs, tau_j, s_of_d_minus_dj2s, output_level);
-        t4 = timenow();
-        if (output_level > 0) {
-            cout << "\b\b\b\b done in " << time_string(t4 - t3) << "." << endl;
-        }
-        else {
-            cout << " finished working in " << time_string(t4 - t1) << "." << endl;
-        }
-
-        // 6. Solve and collect optimality information
-        cout << "Solving..." << flush;
-        try {
-            t1 = timenow();
-            M->solve();
-            t2 = timenow();
-            //Extract solution
-            cout << "  finished working in " << time_string(t2 - t1) << "." << endl;
-            auto sol_lambda = lambda->level();
-            cout << color_green << "  Lower bound for d = " << d << ": " << (*sol_lambda)[0] << color_reset << endl;
-            auto sol_sigma_0 = sigma_0->level();
-            int max_matrix_print_size = 0;  // Change this hard-coded flag to print sigma matrices depending on size
-            if (s_of_d <= max_matrix_print_size)
-                print_vec("sigma_0", (*sol_sigma_0));
-            for (int j = 0; j < m; j++) {
-                auto sol_sigma_j = sigma_j[j]->level();
-                if (s_of_d_minus_djs[j] <= max_matrix_print_size)
-                    print_vec("sigma_" + to_string(j + 1), (*sol_sigma_j));
-            }
-            for (int j = 0; j < p; j++) {
-                auto sol_tau_j = tau_j[j]->level();
-                if (s_of_d_minus_dj2s[j] <= max_matrix_print_size)
-                    print_vec("tau_" + to_string(j + 1), (*sol_tau_j));
-            }
-            obj_val = M->primalObjValue();
-            sol_status = 1;
-            sol_status_string = "Solved";
-        }
-        catch (mosek::fusion::SolutionError &e) {
-            cout << color_yellow << " Didn't solve!\n  " << e.toString() << color_reset << endl;
-            sol_status = -1;
-            sol_status_string = "Not solved";
-        }
-        catch (ParameterError &e) {
-            cout << color_red << " Parameter error!\n  " << e.toString() << color_reset << endl;
-            sol_status = -1;
-            sol_status_string = "Not solved";
-        }
-        catch (const exception &e) {
-            cout << color_red << " Generic exception:\n  " << e.what() << color_reset << endl;
-            sol_status = -1;
-            sol_status_string = "Not solved";
-        }
-
+        sol_tuple = solve_with_mosek(data_tuple, d, positivity_condition, output_level);
     } else if (solver == "scs") {
-        timestamp_t t1, t2, t3, t4, t5, t6, t7, t8;
-        // 4. Compute sizes of optimization variables
-        t1 = timenow();
-        if (output_level > 0)
-            cout << "Computing number of variables..." << flush;
-        else
-            cout << "Building..." << flush;
-        auto scs_size_data = calc_n_vars(g_infos, h_infos, n, d);
-        int scs_n_vars = get<0>(scs_size_data);
-        vector<int> scs_start_posns = get<1>(scs_size_data);
-        vector<string> scs_labels = get<2>(scs_size_data);
-        t2 = timenow();
-        if (output_level > 0) {
-            cout << " done in " << time_string(t2 - t1) << "." << endl;
-            cout << "Creating model and allocating memory..." << flush;
-        }
-        t3 = timenow();
-        // 5. Create SCS model, including cone constraint dimensions and types, but without populating the A matrix or b
-        vector<vector<int> > exp_list_2d = generate_all_exponents(n, 2 * d, 0);
-        vector<unsigned long int> s_of_d_minus_djs;
-        vector<unsigned long int> s_of_d_minus_dj2s;
-        for (int j = 0; j < g_infos.size(); j++) {
-            s_of_d_minus_djs.push_back(n_monomials(n, d - ceil(g_infos[j].degree / 2.0)));
-        }
-        for (int j = 0; j < h_infos.size(); j++) {
-            s_of_d_minus_dj2s.push_back(n_monomials(n, d - ceil(h_infos[j].degree / 2.0)));
-        }
-
-        tuple<ScsCone *, ScsData *, ScsSolution *, ScsInfo, int> M = create_scs_model(
-            f_info, g_infos, h_infos, g_mono_exponents, h_mono_exponents, n, d, exp_list_2d,
-            scs_n_vars, s_of_d_minus_djs, s_of_d_minus_dj2s, positivity_condition, output_level);
-        t4 = timenow();
-        if (output_level > 0) {
-            cout << " total creation/allocation time was " << time_string(t4 - t3) << "." << endl;
-            cout << "Creating coefficient matches...";
-        }
-        // 5. Populate SCS model from input data
-        t5 = timenow();
-        create_scs_coeff_matches(M, f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents,
-                                   h_mono_coeffs, h_mono_exponents, n, d, exp_list_2d, s_of_d,
-                                   s_of_d_minus_djs, s_of_d_minus_dj2s, output_level);
-        t6 = timenow();
-        if (output_level > 0)
-            cout << " done in " << time_string(t6 - t5) << "." << endl;
-        else
-            cout << " finished working in " << time_string(t6 - t1) << "." << endl;
-
-        scs_int exitflag;
-        scs_int success;
-
-        // Solve SDP
-        ScsCone *k = get<0>(M);
-        ScsData *data = get<1>(M);
-        ScsSolution *sol = get<2>(M);
-        ScsInfo info = get<3>(M);
-
-        // Solve semidefinite program
-        cout << "Solving..." << flush;
-        t7 = timenow();
-        exitflag = scs(data, k, sol, &info);
-        t8 = timenow();
-        cout << "  finished working in " << time_string(t8 - t7) << "." << endl;
-
-        // Collect results
-        success = exitflag == SCS_SOLVED || exitflag == SCS_SOLVED_INACCURATE;
-        if (success) {
-
-            obj_val = (double) (-1.0 * info.pobj);  // -1 is because we are doing (-min (-obj)) for maximization
-            cout << color_green << "  Lower bound for d = " << d << ": " << obj_val << color_reset << endl;
-
-//            cout << "x* = [";
-//            for (int i = 0; i < d->n; i++)
-//                cout << sol->x[i] << " ";
-//            cout << "\b]" << endl;
-//            cout << "y* = [";
-//            for (int i = 0; i < d->m; i++)
-//                cout << sol->y[i] << " ";
-//            cout << "\b]" << endl;
-//            cout << "s* = [";
-//            for (int i = 0; i < d->m; i++)
-//                cout << sol->s[i] << " ";
-//            cout << "\b]" << endl;
-        }
-
-        if (output_level > 0) {
-            cout << "Info:\n";
-            cout << "  iter: " << info.iter << endl;
-            cout << "  status: " << info.status << endl;
-            cout << "  status_val: " << info.status_val << endl;
-            cout << "  pobj: " << info.pobj << endl;
-            cout << "  dobj: " << info.dobj << endl;
-            cout << "  res_pri: " << info.res_pri << endl;
-            cout << "  res_dual: " << info.res_dual << endl;
-            cout << "  res_infeas: " << info.res_infeas << endl;
-            cout << "  res_unbdd: " << info.res_unbdd << endl;
-            cout << "  rel_gap: " << info.rel_gap << endl;
-            cout << "  setup_time: " << info.setup_time << endl;
-            cout << "  solve_time: " << info.solve_time << endl;
-        }
-        solver_specific_status = info.status_val;
-        sol_status_string = string(info.status);
-
-        if (solver_specific_status == -1) { // SCS reports "unbounded"
-            sol_status = -2; // Return infeasible, as SCS solves a min instead of a max
-            sol_status_string = "Infeasible";
-        } else if (solver_specific_status == -2) { // SCS reports "infeasible"
-            sol_status = -1; // Return unbounded, as SCS solves a min instead of a max
-            sol_status_string = "Unbounded";
-        } else {
-            sol_status = solver_specific_status;
-        }
-
-        // Free up memory allocated to model and solution
-        SCS(free_data)(data, k);
-        SCS(free_sol)(sol);
+        sol_tuple = solve_with_scs(data_tuple, d, positivity_condition, output_level);
     } else {
         cout << "Unrecognized solver choice: " << solver << endl;
+        sol_tuple = make_tuple(0, -99, "No solver");
     }
 
-    return make_tuple(obj_val, sol_status, sol_status_string);
+    return sol_tuple;
 }
