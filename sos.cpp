@@ -257,78 +257,20 @@ tuple<double, int, string> sos_level_d(
     int solver_specific_status = 0;
     string sol_status_string;
 
-    // 0. State objective and constraints as strings read from file
-    int m = g_strings.size();
-    int p = h_strings.size();
-    if (output_level > 0) {
-        cout << "f(x)\t= " << f_string << endl;
-        for (int i = 0; i < m; i++)
-            cout << "g_" << i + 1 << "(x)\t= " << g_strings[i] << endl;
-        for (int i = 0; i < p; i++)
-            cout << "h_" << i + 1 << "(x)\t= " << h_strings[i] << endl;
-    }
-    // 1. Work out dimension and degree of each polynomial
-    // Parse f(x)
-    PolyInfo f_info = infer_dim_and_n_terms(f_string, false);
-    vector<PolyInfo> g_infos;
-    vector<PolyInfo> h_infos;
-    for (int j = 0; j < m; j++)
-        g_infos.push_back(infer_dim_and_n_terms(g_strings[j], false));
-    for (int j = 0; j < p; j++)
-        h_infos.push_back(infer_dim_and_n_terms(h_strings[j], false));
-    int n = f_info.dimension;
-    for (int j = 0; j < m; j++)
-        n = max(n, g_infos[j].dimension);  // Increase n to match highest-dimensional ineq constraint if necessary
-    for (int j = 0; j < p; j++)
-        n = max(n, h_infos[j].dimension);  // Increase n to match highest-dimensional eq constraint if necessary
-    f_info.dimension = n;
-    for (int j = 0; j < m; j++)
-        g_infos[j].dimension = n;
-    for (int j = 0; j < p; j++)
-        h_infos[j].dimension = n;
-
-    if (f_info.degree == 0) {
-        cout << "Cannot minimize a constant." << endl;
-        return make_tuple(obj_val, sol_status, sol_status_string);
-    }
-    vector<double> f_mono_coeffs(f_info.n_terms, 0.0); // List of monomial coefficients
-    vector<vector<int> > f_mono_exponents(f_info.n_terms, vector<int>(f_info.dimension, 0));
-    parse_poly(f_string, f_mono_coeffs, f_mono_exponents, f_info, false);
-
-    // Parse g_1(x), ..., g_m(x)
-    vector<vector <double> > g_mono_coeffs;
-    vector<vector <vector <int> > > g_mono_exponents;
-    for (int j = 0; j < m; j++) {
-        if (g_infos.back().n_terms == 0) {
-            g_infos.pop_back();  // Delete last polynomial because it was most likely just an empty space character
-            cout << "  Polynomial g(" << j + 1 << ") has no terms: [" << g_strings[j] << "]. Skipping." << endl;
-            continue;
-        }
-        vector<double> g_mono_coeffs_entry(g_infos[j].n_terms, 0.0);
-        vector<vector<int> > g_mono_exponents_entry(g_infos[j].n_terms, vector<int>(g_infos[j].dimension, 0));
-        g_mono_coeffs.push_back(g_mono_coeffs_entry);
-        g_mono_exponents.push_back(g_mono_exponents_entry);
-        parse_poly(g_strings[j], g_mono_coeffs[j], g_mono_exponents[j], g_infos[j], false);
-    }
-    m = g_infos.size(); // Update m to account for skipped strings containing no terms
-    // Parse h_1(x), ..., h_p(x)
-    vector<vector <double> > h_mono_coeffs;
-    vector<vector <vector <int> > > h_mono_exponents;
-    for (int j = 0; j < p; j++) {
-        if (h_infos.back().n_terms == 0) {
-            h_infos.pop_back();  // Delete last polynomial because it was most likely just an empty space character
-            cout << "  Polynomial h(" << j + 1 << ") has no terms: [" << h_strings[j] << "]. Skipping." << endl;
-            continue;
-        }
-        vector<double> h_mono_coeffs_entry(h_infos[j].n_terms, 0.0);
-        vector<vector<int> > h_mono_exponents_entry(h_infos[j].n_terms, vector<int>(h_infos[j].dimension, 0));
-        h_mono_coeffs.push_back(h_mono_coeffs_entry);
-        h_mono_exponents.push_back(h_mono_exponents_entry);
-        parse_poly(h_strings[j], h_mono_coeffs[j], h_mono_exponents[j], h_infos[j], false);
-    }
-    p = h_infos.size(); // Update m to account for skipped strings containing no terms
-
-    eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, h_mono_exponents, output_level);  // Update n and input data, removing unused dims
+    // 1. Parse polynomial strings and convert to tabular form
+    auto data_tuple = create_polynomial_tables(f_string, g_strings, h_strings, output_level);
+    int n = get<0>(data_tuple); int m = get<1>(data_tuple); int p = get<2>(data_tuple);
+    PolyInfo f_info = get<3>(data_tuple);
+    vector<PolyInfo> g_infos = get<4>(data_tuple);
+    vector<PolyInfo> h_infos = get<5>(data_tuple);
+    vector<double> f_mono_coeffs = get<6>(data_tuple);
+    vector<vector<int> > f_mono_exponents = get<7>(data_tuple);
+    vector<vector<double> > g_mono_coeffs = get<8>(data_tuple);
+    vector<vector<vector<int> > > g_mono_exponents = get<9>(data_tuple);
+    vector<vector<double> > h_mono_coeffs = get<10>(data_tuple);
+    vector<vector<vector<int> > > h_mono_exponents = get<11>(data_tuple);
+    // Update n and input data, removing unused dims
+    eliminate_unused_dims(n, f_mono_exponents, g_mono_exponents, h_mono_exponents, output_level);
 
     // 2. Work out minimum legal d for SOS problem and set d to this if necessary
     int d = compute_legal_d(f_info, g_infos, h_infos, d_request);

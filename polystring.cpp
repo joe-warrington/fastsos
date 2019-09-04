@@ -243,6 +243,82 @@ void parse_poly(string& s, vector<double>& mono_coeffs, vector<vector<int> >& mo
     }
 }
 
+tuple<int, int, int, PolyInfo, vector<PolyInfo>, vector<PolyInfo>,
+        vector<double>, vector<vector<int> >,
+        vector<vector <double> >, vector<vector <vector <int> > >,
+        vector<vector <double> >, vector<vector <vector <int> > > > create_polynomial_tables(
+                string& f_string, vector<string>& g_strings, vector<string>& h_strings, int output_level) {
+    // 0. State objective and constraints as strings read from file
+    int m = g_strings.size();
+    int p = h_strings.size();
+    if (output_level > 0) {
+        cout << "f(x)\t= " << f_string << endl;
+        for (int i = 0; i < m; i++)
+            cout << "g_" << i + 1 << "(x)\t= " << g_strings[i] << endl;
+        for (int i = 0; i < p; i++)
+            cout << "h_" << i + 1 << "(x)\t= " << h_strings[i] << endl;
+    }
+    // 1. Work out dimension and degree of each polynomial
+    // Parse f(x)
+    PolyInfo f_info = infer_dim_and_n_terms(f_string, false);
+    vector<PolyInfo> g_infos;
+    vector<PolyInfo> h_infos;
+    for (int j = 0; j < m; j++)
+        g_infos.push_back(infer_dim_and_n_terms(g_strings[j], false));
+    for (int j = 0; j < p; j++)
+        h_infos.push_back(infer_dim_and_n_terms(h_strings[j], false));
+    int n = f_info.dimension;
+    for (int j = 0; j < m; j++)
+        n = max(n, g_infos[j].dimension);  // Increase n to match highest-dimensional ineq constraint if necessary
+    for (int j = 0; j < p; j++)
+        n = max(n, h_infos[j].dimension);  // Increase n to match highest-dimensional eq constraint if necessary
+    f_info.dimension = n;
+    for (int j = 0; j < m; j++)
+        g_infos[j].dimension = n;
+    for (int j = 0; j < p; j++)
+        h_infos[j].dimension = n;
+
+    vector<double> f_mono_coeffs(f_info.n_terms, 0.0); // List of monomial coefficients
+    vector<vector<int> > f_mono_exponents(f_info.n_terms, vector<int>(f_info.dimension, 0));
+    parse_poly(f_string, f_mono_coeffs, f_mono_exponents, f_info, false);
+
+    // Parse g_1(x), ..., g_m(x)
+    vector<vector <double> > g_mono_coeffs;
+    vector<vector <vector <int> > > g_mono_exponents;
+    for (int j = 0; j < m; j++) {
+        if (g_infos.back().n_terms == 0) {
+            g_infos.pop_back();  // Delete last polynomial because it was most likely just an empty space character
+            cout << "  Polynomial g(" << j + 1 << ") has no terms: [" << g_strings[j] << "]. Skipping." << endl;
+            continue;
+        }
+        vector<double> g_mono_coeffs_entry(g_infos[j].n_terms, 0.0);
+        vector<vector<int> > g_mono_exponents_entry(g_infos[j].n_terms, vector<int>(g_infos[j].dimension, 0));
+        g_mono_coeffs.push_back(g_mono_coeffs_entry);
+        g_mono_exponents.push_back(g_mono_exponents_entry);
+        parse_poly(g_strings[j], g_mono_coeffs[j], g_mono_exponents[j], g_infos[j], false);
+    }
+    m = g_infos.size(); // Update m to account for skipped strings containing no terms
+    // Parse h_1(x), ..., h_p(x)
+    vector<vector <double> > h_mono_coeffs;
+    vector<vector <vector <int> > > h_mono_exponents;
+    for (int j = 0; j < p; j++) {
+        if (h_infos.back().n_terms == 0) {
+            h_infos.pop_back();  // Delete last polynomial because it was most likely just an empty space character
+            cout << "  Polynomial h(" << j + 1 << ") has no terms: [" << h_strings[j] << "]. Skipping." << endl;
+            continue;
+        }
+        vector<double> h_mono_coeffs_entry(h_infos[j].n_terms, 0.0);
+        vector<vector<int> > h_mono_exponents_entry(h_infos[j].n_terms, vector<int>(h_infos[j].dimension, 0));
+        h_mono_coeffs.push_back(h_mono_coeffs_entry);
+        h_mono_exponents.push_back(h_mono_exponents_entry);
+        parse_poly(h_strings[j], h_mono_coeffs[j], h_mono_exponents[j], h_infos[j], false);
+    }
+    p = h_infos.size(); // Update m to account for skipped strings containing no terms
+
+    return make_tuple(n, m, p, f_info, g_infos, h_infos,
+                      f_mono_coeffs, f_mono_exponents, g_mono_coeffs, g_mono_exponents, h_mono_coeffs, h_mono_exponents);
+}
+
 tuple<string, vector<string>, vector<string>, bool> read_problem_from_file(const string& filename) {
     string line, obj_string;
     vector<string> ineq_constr_strings(0, "");
