@@ -7,6 +7,7 @@
 #include "manip_poly.h"
 #include "build_mosek.h"
 #include "build_scs.h"
+#include "admm.h"
 
 #include <math.h>
 #include <vector>
@@ -261,6 +262,14 @@ tuple<double, int, string> sos_level_d(
         sol_tuple = solve_with_mosek(data_tuple, d, positivity_condition, output_level);
     } else if (solver == "scs") {
         sol_tuple = solve_with_scs(data_tuple, d, positivity_condition, output_level);
+    } else if (solver == "sosadmm") {
+        timestamp_t t0 = timenow();
+        sdp SDP(data_tuple,d);
+        admm ADMM(SDP);
+        sol_tuple = ADMM.min();
+        cout << get<0>(sol_tuple) << " " << get<1>(sol_tuple) << " " <<  get<2>(sol_tuple) << endl;
+        t0 = timenow()-t0;
+        cout << "Needed " << time_string(t0) << endl;
     } else {
         cout << "Unrecognized solver choice: " << solver << endl;
         sol_tuple = make_tuple(0, -99, "No solver");

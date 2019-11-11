@@ -1,18 +1,8 @@
 // (c) 2019 ETH Zurich, Automatic Control Lab, Joe Warrington
 
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <tuple>
-#include <string>
+#include "manip_poly.h"
 
 using namespace std;
-
-struct PolyInfo{
-    int dimension = 0;
-    int degree = 0;
-    int n_terms = 0;
-};
 
 PolyInfo infer_dim_and_n_terms(const string& s, bool diag_msg) {
     PolyInfo output;

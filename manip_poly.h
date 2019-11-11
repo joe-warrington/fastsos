@@ -3,15 +3,21 @@
 #ifndef FASTSOS_POLYSTRING_H
 #define FASTSOS_POLYSTRING_H
 
-#endif //FASTSOS_POLYSTRING_H
-
-using namespace std;
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <tuple>
+#include <string>
 
 struct PolyInfo{
     int dimension = 0;
     int degree = 0;
     int n_terms = 0;
 };
+
+#endif //FASTSOS_POLYSTRING_H
+
+using namespace std;
 
 PolyInfo infer_dim_and_n_terms(const std::string& s, bool diag_msg);
 

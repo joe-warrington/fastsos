@@ -35,9 +35,9 @@ int main(int argc, char * argv[]) {
         }
         if (argc == 4) {
             solver_choice = argv[3];
-            if (solver_choice != "mosek" && solver_choice != "scs") {
+            if (solver_choice != "mosek" && solver_choice != "scs" && solver_choice != "sosadmm") {
                 cout << "  \033[1;31m" << "Cannot use solver '" << positivity_condition <<
-                     "'. Can only use MOSEK or SCS." << "\033[0m" << endl;
+                     "'. Can only use MOSEK, SCS, or SOSADMM." << "\033[0m" << endl;
                 return 1;
             }
         }

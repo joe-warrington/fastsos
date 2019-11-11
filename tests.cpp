@@ -214,7 +214,7 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
                                                 {"x1 - x3 - 2x4 - 4x5", "x2 - x6 - 2x7 - 4x8", "x3^2 - x3",
                                                  "x4^2 - x4", "x5^2 - x5", "x6^2 - x6", "x7^2 - x7", "x8^2 - x8"},
                                                 {"x1 - x3 - 2x4 - 4x5", "x2 - x6 - 2x7 - 4x8", "x3^2 - x3",
-                                                        "x4^2 - x4", "x5^2 - x5", "x6^2 - x6", "x7^2 - x7", "x8^2 - x8"}};
+                                                 "x4^2 - x4", "x5^2 - x5", "x6^2 - x6", "x7^2 - x7", "x8^2 - x8"}};
     vector<int> relaxation_degree = {1,
                                      2,
                                      2,
@@ -306,16 +306,19 @@ void run_tests() {
     cout << "Running in test mode...\n";
     cout << "--------------------------------------------------------------\n\n";
 
-    tuple<int, int> parse_results, program_results_scs, program_results_mosek;
+    tuple<int, int> parse_results, program_results_scs, program_results_mosek, program_results_sosadmm;
     parse_results = run_polynomial_parser_tests();
 
-    string solver_choice = "scs";
-    program_results_scs = run_sos_program_tests(solver_choice);
-    solver_choice = "mosek";
-    program_results_mosek = run_sos_program_tests(solver_choice);
+//    string solver_choice = "scs";
+//    program_results_scs = run_sos_program_tests(solver_choice);
+//    solver_choice = "mosek";
+//    program_results_mosek = run_sos_program_tests(solver_choice);
+    string solver_choice = "sosadmm";
+    program_results_sosadmm = run_sos_program_tests(solver_choice);
 
     cout << "Test summary:\t" << get<0>(parse_results) << "/" << get<1>(parse_results) << " parsing tests passed.\n";
-    cout << "\t\t" << get<0>(program_results_scs) << "/" << get<1>(program_results_scs) << " SOS programming tests passed with SCS.\n";
-    cout << "\t\t" << get<0>(program_results_mosek) << "/" << get<1>(program_results_mosek) << " SOS programming tests passed with MOSEK.\n";
+//    cout << "\t\t" << get<0>(program_results_scs) << "/" << get<1>(program_results_scs) << " SOS programming tests passed with SCS.\n";
+//    cout << "\t\t" << get<0>(program_results_mosek) << "/" << get<1>(program_results_mosek) << " SOS programming tests passed with MOSEK.\n";
+    cout << "\t\t" << get<0>(program_results_sosadmm) << "/" << get<1>(program_results_sosadmm) << " SOS programming tests passed with MOSEK.\n";
     cout << "--------------------------------------------------------------\n";
 }
