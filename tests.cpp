@@ -221,7 +221,7 @@ tuple<int, int> run_sos_program_tests(string solver_choice) {
                                      2,
                                      2,
                                      1,
-                                     2};
+                                     3};
     vector<string> positivity_certs = {"PSD",
                                        "PSD",
                                        "PSD",
